@@ -288,10 +288,26 @@ fn processDir(
         var file_writer = file_out.writer(io_buf);
         const writer = &file_writer.interface;
 
+        // Get title from the first heading in document
+        var title: []const u8 = entry.name;
+        const iter = c.cmark_iter_new(document);
+        while (c.cmark_iter_next(iter) != c.CMARK_EVENT_DONE) {
+            var node = c.cmark_iter_get_node(iter);
+            const node_type = c.cmark_node_get_type(node);
+            if (node_type == c.CMARK_NODE_NONE) break;
+            if (node_type == c.CMARK_NODE_HEADING) {
+                node = c.cmark_node_first_child(node) orelse continue;
+                const ptr = c.cmark_node_get_literal(node) orelse continue;
+                title = std.mem.span(ptr);
+                break;
+            }
+        }
+        c.cmark_iter_free(iter);
+
         // Output HTML
         cur_verb = .@"write to";
         try writer.writeAll("<!DOCTYPE html><html>");
-        try writeHtmlHead(writer, config, "asdf");
+        try writeHtmlHead(writer, config, title);
         try writer.writeAll("<body>");
         try writer.writeAll(html);
         try writer.writeAll("</body>");
