@@ -1,6 +1,12 @@
 .{
     .name = .zmarkgen,
     .version = "0.0.1",
+    .dependencies = .{
+        .cmark = .{
+            .url = "https://github.com/commonmark/cmark/archive/refs/tags/0.31.1.tar.gz",
+            .hash = "N-V-__8AAE7KEgA7c35bKyq-ozo8lCx1ABlR4ZIBVqIuHG24",
+        },
+    },
     .minimum_zig_version = "0.15.1",
     .paths = .{""},
     .fingerprint = 0xe1566e5e67165682,
