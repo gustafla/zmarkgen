@@ -1,48 +1,16 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
+const fs = std.fs;
+const log = std.log;
+const mem = std.mem;
+const process = std.process;
+const zon = std.zon;
+const Allocator = mem.Allocator;
 const Writer = std.Io.Writer;
 const builtin = @import("builtin");
 
 const c = @cImport({
     @cInclude("cmark.h");
 });
-
-const ConfigLoadError =
-    std.fs.File.StatError ||
-    std.fs.File.OpenError ||
-    std.mem.Allocator.Error ||
-    std.Io.Reader.Error ||
-    error{ParseZon};
-
-const Config = struct {
-    out_dir: []const u8 = "generated",
-    charset: []const u8 = "utf-8",
-    site_name: ?[]const u8 = null,
-
-    pub fn load(
-        allocator: Allocator,
-        path: []const u8,
-        diagnostics: ?*std.zon.parse.Diagnostics,
-    ) ConfigLoadError!Config {
-        const file = try std.fs.cwd().openFile(path, .{});
-        defer file.close();
-
-        var rbuf: [1024]u8 = undefined;
-        var reader = file.reader(&rbuf);
-
-        const stat = try file.stat();
-        const buf = try allocator.allocSentinel(u8, stat.size, 0);
-        try reader.interface.readSliceAll(buf);
-
-        return try std.zon.parse.fromSlice(
-            @This(),
-            allocator,
-            buf,
-            diagnostics,
-            .{},
-        );
-    }
-};
 
 const CliOptions = struct {
     recursive: bool = false,
@@ -52,22 +20,22 @@ const CliOptions = struct {
     pub fn parse() CliOptions {
         var result: @This() = .{};
 
-        var args = std.process.args();
+        var args = process.args();
         _ = args.skip();
         while (args.next()) |arg| {
-            if (std.mem.eql(u8, arg, "-h")) {
-                std.log.info(
-                    \\Example: zmarkgen -r -c doc/zmarkgen.zon doc
+            if (mem.eql(u8, arg, "-h")) {
+                log.info(
+                    \\Example: zmarkgen -c my_blog.zon
                 , .{});
-                std.process.exit(0);
-            } else if (std.mem.eql(u8, arg, "-r")) {
+                process.exit(0);
+            } else if (mem.eql(u8, arg, "-r")) {
                 result.recursive = true;
-            } else if (std.mem.eql(u8, arg, "-c")) {
+            } else if (mem.eql(u8, arg, "-c")) {
                 if (args.next()) |path| {
                     result.config_path = path;
                 } else {
-                    std.log.err("Option -c requires a file path", .{});
-                    std.process.exit(1);
+                    log.err("Option -c requires a file path", .{});
+                    process.exit(1);
                 }
             } else {
                 result.input_dir = arg;
@@ -76,15 +44,56 @@ const CliOptions = struct {
         }
 
         if (args.skip()) {
-            std.log.err("Too many arguments, see usage with -h", .{});
-            std.process.exit(1);
+            log.err("Too many arguments, see usage with -h", .{});
+            process.exit(1);
         }
 
         return result;
     }
 };
 
-fn htmlHead(
+const ConfigLoadError =
+    fs.File.StatError ||
+    fs.File.OpenError ||
+    mem.Allocator.Error ||
+    std.Io.Reader.Error ||
+    error{ ParseZon, OutDirTooComplex };
+
+const Config = struct {
+    out_dir: []const u8 = "generated",
+    charset: []const u8 = "utf-8",
+    site_name: ?[]const u8 = null,
+
+    pub fn load(
+        allocator: Allocator,
+        path: []const u8,
+        diagnostics: ?*zon.parse.Diagnostics,
+    ) ConfigLoadError!Config {
+        const file = try fs.cwd().openFile(path, .{});
+        defer file.close();
+
+        var rbuf: [1024]u8 = undefined;
+        var reader = file.reader(&rbuf);
+
+        const stat = try file.stat();
+        const buf = try allocator.allocSentinel(u8, stat.size, 0);
+        try reader.interface.readSliceAll(buf);
+
+        const config = try zon.parse.fromSlice(
+            @This(),
+            allocator,
+            buf,
+            diagnostics,
+            .{},
+        );
+        if (mem.containsAtLeastScalar(u8, config.out_dir, 1, fs.path.sep)) {
+            return ConfigLoadError.OutDirTooComplex;
+        }
+        return config;
+    }
+};
+
+fn writeHtmlHead(
     writer: *Writer,
     config: Config,
     title: []const u8,
@@ -104,63 +113,113 @@ fn htmlHead(
     try writer.writeAll("</head>");
 }
 
+const Error =
+    fs.File.OpenError ||
+    fs.Dir.MakeError ||
+    fs.File.StatError ||
+    mem.Allocator.Error ||
+    std.Io.Reader.Error ||
+    std.Io.Writer.Error ||
+    error{
+        CmarkParseFailed,
+        CmarkRenderFailed,
+    };
+
+const ProcessDirArgs = struct {
+    recursive: bool,
+    in: fs.Dir,
+    subpath_in: []const u8,
+    out: fs.Dir,
+    subpath_out: []const u8,
+};
+
+const Diagnostic = struct {
+    verb: ?Verb,
+    subject: []const u8,
+
+    const init: @This() = .{ .verb = null, .subject = "" };
+
+    const Verb = enum {
+        open,
+        create,
+        stat,
+        read,
+        @"write to",
+        parse,
+        render,
+        @"allocate buffer for",
+    };
+
+    pub fn format(self: *const @This(), w: *Writer) Writer.Error!void {
+        if (self.verb) |verb| {
+            try w.print("Failed to {s} {s}", .{
+                @tagName(verb),
+                self.subject,
+            });
+        }
+    }
+};
+
 fn processDir(
     allocator: Allocator,
-    opt: CliOptions,
+    io_buf: []u8,
     config: Config,
-    in: std.fs.Dir,
-    subpath_in: []const u8,
-    out: std.fs.Dir,
-    subpath_out: []const u8,
-) void {
-    var buf: [1024]u8 = undefined;
+    diag: ?*Diagnostic,
+    args: ProcessDirArgs,
+) Error!void {
+    // Set up diagnostic writer
+    var cur_verb: Diagnostic.Verb = .open;
+    var cur_subject: []const u8 = "";
+    errdefer if (diag) |d| {
+        if (d.verb == null) {
+            d.* = .{
+                .verb = cur_verb,
+                .subject = cur_subject,
+            };
+        } // else: if diag was already set by previous call, don't overwrite
+    };
 
     // Open input subpath for iteration
-    var dir_in = in.openDir(
-        subpath_in,
+    cur_verb = .open;
+    cur_subject = args.subpath_in;
+    var dir_in = try args.in.openDir(
+        args.subpath_in,
         .{ .iterate = true },
-    ) catch |e| {
-        std.log.err("Cannot open {s}: {s}", .{ subpath_in, @errorName(e) });
-        std.process.exit(1);
-    };
+    );
     defer dir_in.close();
 
     // Create output subdir
-    out.makeDir(subpath_out) catch |e| switch (e) {
+    cur_verb = .create;
+    cur_subject = args.subpath_out;
+    args.out.makeDir(args.subpath_out) catch |e| switch (e) {
         error.PathAlreadyExists => {},
-        else => {
-            std.log.err("Cannot create directory: {s}", .{@errorName(e)});
-            std.process.exit(1);
-        },
+        else => return e,
     };
-    var dir_out = out.openDir(subpath_out, .{}) catch |e| {
-        std.log.err("Cannot open {s}: {s}", .{ subpath_out, @errorName(e) });
-        std.process.exit(1);
-    };
+
+    cur_verb = .open;
+    var dir_out = try args.out.openDir(args.subpath_out, .{});
     defer dir_out.close();
 
     var it = dir_in.iterate();
-    while (it.next() catch |e| {
-        std.log.err("{s}", .{@errorName(e)});
-        std.process.exit(1);
+    while (blk: {
+        cur_verb = .read;
+        cur_subject = args.subpath_in;
+        break :blk try it.next();
     }) |entry| {
         switch (entry.kind) {
             .directory => {
-                if (opt.recursive) {
-                    processDir(
-                        allocator,
-                        opt,
-                        config,
-                        dir_in,
-                        entry.name,
-                        dir_out,
-                        entry.name,
-                    );
-                } else {
-                    std.log.info(
-                        "Skipping directory {s}, use -r to recurse",
-                        .{entry.name},
-                    );
+                // TODO: This is a buggy workaround for the situation when -r
+                // is specified and the output directory happens to be a subset
+                // of the input directory tree. Not a proper solution.
+                if (mem.eql(u8, entry.name, config.out_dir)) continue;
+                if (args.recursive) {
+                    try processDir(allocator, io_buf, config, diag, .{
+                        .recursive = args.recursive,
+                        .in = dir_in,
+                        .subpath_in = entry.name,
+                        .out = dir_out,
+                        .subpath_out = entry.name,
+                    });
                 }
                 continue;
             },
@@ -169,88 +228,81 @@ fn processDir(
         }
 
         // Skip non-markdown files, TODO: copy or link them to dir_out
-        if (!std.mem.endsWith(u8, entry.name, ".md")) {
+        if (!mem.endsWith(u8, entry.name, ".md")) {
             continue;
         }
 
         // Open and read the input file
-        const file_in = dir_in.openFile(entry.name, .{}) catch |e| {
-            std.log.err("Cannot open {s}: {s}", .{ entry.name, @errorName(e) });
-            std.process.exit(1);
-        };
+        cur_verb = .open;
+        cur_subject = entry.name;
+        const file_in = try dir_in.openFile(entry.name, .{});
         defer file_in.close();
-        const stat_in = file_in.stat() catch |e| {
-            std.log.err("Cannot stat {s}: {s}", .{ entry.name, @errorName(e) });
-            std.process.exit(1);
-        };
-        const md = allocator.alloc(u8, stat_in.size) catch {
-            std.log.err("Memory allocation failed", .{});
-            std.process.exit(1);
-        };
+
+        cur_verb = .stat;
+        const stat_in = try file_in.stat();
+
+        cur_verb = .@"allocate buffer for";
+        cur_subject = entry.name;
+        const md = try allocator.alloc(u8, stat_in.size);
         defer allocator.free(md);
-        var reader = file_in.reader(&buf);
-        reader.interface.readSliceAll(md) catch |e| {
-            std.log.err("Cannot read {s}: {s}", .{ entry.name, @errorName(e) });
-            std.process.exit(1);
-        };
+
+        cur_verb = .read;
+        var reader = file_in.reader(io_buf);
+        try reader.interface.readSliceAll(md);
 
         // Parse markdown
+        cur_verb = .parse;
         const document = c.cmark_parse_document(
             md.ptr,
             md.len,
             c.CMARK_OPT_DEFAULT,
-        ) orelse {
-            std.log.err("Failed to parse {s}", .{entry.name});
-            std.process.exit(1);
-        };
+        ) orelse return Error.CmarkParseFailed;
         defer c.cmark_node_free(document);
 
+        // Render markdown
+        cur_verb = .render;
+        const html_ptr = c.cmark_render_html(
+            document,
+            c.CMARK_OPT_DEFAULT,
+        ) orelse return Error.CmarkRenderFailed;
+        defer std.c.free(html_ptr);
+        const html = mem.span(html_ptr);
+
         // Open output file
-        const path_out = std.mem.concat(allocator, u8, &.{
+        cur_verb = .@"allocate buffer for";
+        cur_subject = "a new filename";
+        const path_out = try mem.concat(allocator, u8, &.{
             entry.name[0..(entry.name.len - ".md".len)],
             ".html",
-        }) catch {
-            std.log.err("Memory allocation failed", .{});
-            std.process.exit(1);
-        };
-        const file_out = dir_out.createFile(
+        }); // Don't free path_out!
+
+        cur_verb = .create;
+        cur_subject = path_out;
+        const file_out = try dir_out.createFile(
             path_out,
             .{ .truncate = true },
-        ) catch |e| {
-            std.log.err(
-                "Cannot create {s}: {s}",
-                .{ entry.name, @errorName(e) },
-            );
-            std.process.exit(1);
-        };
+        );
         defer file_out.close();
-        allocator.free(path_out);
 
         // Initialize writer, reusing buf is okay
-        var file_writer = file_out.writer(&buf);
+        var file_writer = file_out.writer(io_buf);
         const writer = &file_writer.interface;
 
-        // Output HTML, TODO: fix error handling plz
-        writer.writeAll("<!DOCTYPE html><html>") catch unreachable;
-        htmlHead(writer, config, "asdf") catch unreachable;
-        writer.writeAll("<body>") catch unreachable;
-        const html_ptr = c.cmark_render_html(document, c.CMARK_OPT_DEFAULT);
-        if (html_ptr == null) {
-            std.log.err("cmark_render_html returned null", .{});
-            std.process.exit(1);
-        }
-        defer std.c.free(html_ptr);
-        const html = std.mem.span(html_ptr);
-        writer.writeAll(html) catch unreachable;
-        writer.writeAll("</body>") catch unreachable;
-        writer.writeAll("</html>") catch unreachable;
+        // Output HTML
+        cur_verb = .@"write to";
+        try writer.writeAll("<!DOCTYPE html><html>");
+        try writeHtmlHead(writer, config, "asdf");
+        try writer.writeAll("<body>");
+        try writer.writeAll(html);
+        try writer.writeAll("</body>");
+        try writer.writeAll("</html>");
 
-        writer.flush() catch unreachable;
+        try writer.flush();
     }
 }
 
 pub fn main() void {
-    std.log.debug("Using cmark {s}", .{c.cmark_version_string()});
+    log.debug("Using cmark {s}", .{c.cmark_version_string()});
     var arena = std.heap.ArenaAllocator.init(std.heap.raw_c_allocator);
     defer arena.deinit();
     const allocator = arena.allocator();
@@ -258,40 +310,53 @@ pub fn main() void {
     const opt = CliOptions.parse();
 
     // Load config file
-    std.log.info("Loading {s}", .{opt.config_path});
-    var zon_diagnostics: std.zon.parse.Diagnostics = .{};
+    log.info("Loading {s}", .{opt.config_path});
+    var zon_diagnostics: zon.parse.Diagnostics = .{};
     const config: Config = Config.load(
         allocator,
         opt.config_path,
         &zon_diagnostics,
     ) catch |e| switch (e) {
-        error.FileNotFound => def: {
-            std.log.info(
+        ConfigLoadError.FileNotFound => def: {
+            log.info(
                 "File {s} not found, using defaults",
                 .{opt.config_path},
             );
             break :def .{};
         },
-        error.ParseZon => {
-            std.log.err("{f}", .{zon_diagnostics});
-            std.process.exit(1);
+        ConfigLoadError.ParseZon => {
+            log.err("{f}", .{zon_diagnostics});
+            process.exit(1);
+        },
+        // TODO: This error can be removed if the input-output subtree problem
+        // when using -r is solved properly. See other TODO comments.
+        ConfigLoadError.OutDirTooComplex => {
+            log.err(
+                \\Config field out_dir must be a relative path,
+                \\and may not specify any subdirectories
+                \\
+            , .{});
+            process.exit(1);
         },
         else => {
-            std.log.err("Unhandled error: {any}", .{e});
-            std.process.exit(1);
+            log.err("Unhandled error: {any}", .{e});
+            process.exit(1);
         },
     };
 
-    // Run
-    processDir(
-        allocator,
-        opt,
-        config,
-        std.fs.cwd(),
-        opt.input_dir,
-        std.fs.cwd(),
-        config.out_dir,
-    );
+    // Run with an IO buffer allocated on the stack
+    var buf: [1024]u8 = undefined;
+    var diag: Diagnostic = .init;
+    processDir(allocator, &buf, config, &diag, .{
+        .recursive = opt.recursive,
+        .in = fs.cwd(),
+        .subpath_in = opt.input_dir,
+        .out = fs.cwd(),
+        .subpath_out = config.out_dir,
+    }) catch |e| {
+        log.err("{f}: {s}", .{ diag, @errorName(e) });
+        process.exit(1);
+    };
 }
 
 pub const std_options: std.Options = .{
