@@ -139,9 +139,9 @@ const ProcessDirArgs = struct {
 
 const Diagnostic = struct {
     verb: ?Verb,
-    subject: []const u8,
+    object: []const u8,
 
-    const init: @This() = .{ .verb = null, .subject = "" };
+    const init: @This() = .{ .verb = null, .object = "" };
 
     const Verb = enum {
         open,
@@ -158,7 +158,7 @@ const Diagnostic = struct {
         if (self.verb) |verb| {
             try w.print("Failed to {s} {s}", .{
                 @tagName(verb),
-                self.subject,
+                self.object,
             });
         }
     }
@@ -173,19 +173,19 @@ fn processDir(
 ) Error!void {
     // Set up diagnostic writer
     var cur_verb: Diagnostic.Verb = .open;
-    var cur_subject: []const u8 = "";
+    var cur_object: []const u8 = "";
     errdefer if (diag) |d| {
         if (d.verb == null) {
             d.* = .{
                 .verb = cur_verb,
-                .subject = cur_subject,
+                .object = cur_object,
             };
         } // else: if diag was already set by previous call, don't overwrite
     };
 
     // Open input subpath for iteration
     cur_verb = .open;
-    cur_subject = args.subpath_in;
+    cur_object = args.subpath_in;
     var dir_in = try args.in.openDir(
         args.subpath_in,
         .{ .iterate = true },
@@ -194,7 +194,7 @@ fn processDir(
 
     // Create output subdir
     cur_verb = .create;
-    cur_subject = args.subpath_out;
+    cur_object = args.subpath_out;
     args.out.makeDir(args.subpath_out) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
@@ -207,7 +207,7 @@ fn processDir(
     var it = dir_in.iterate();
     while (blk: {
         cur_verb = .read;
-        cur_subject = args.subpath_in;
+        cur_object = args.subpath_in;
         break :blk try it.next();
     }) |entry| {
         switch (entry.kind) {
@@ -238,7 +238,7 @@ fn processDir(
 
         // Open and read the input file
         cur_verb = .open;
-        cur_subject = entry.name;
+        cur_object = entry.name;
         const file_in = try dir_in.openFile(entry.name, .{});
         defer file_in.close();
 
@@ -246,7 +246,7 @@ fn processDir(
         const stat_in = try file_in.stat();
 
         cur_verb = .@"allocate buffer for";
-        cur_subject = entry.name;
+        cur_object = entry.name;
         const md = try allocator.alloc(u8, stat_in.size);
         defer allocator.free(md);
 
@@ -274,14 +274,14 @@ fn processDir(
 
         // Open output file
         cur_verb = .@"allocate buffer for";
-        cur_subject = "a new filename";
+        cur_object = "a new filename";
         const path_out = try mem.concat(allocator, u8, &.{
             entry.name[0..(entry.name.len - ".md".len)],
             ".html",
         }); // Don't free path_out!
 
         cur_verb = .create;
-        cur_subject = path_out;
+        cur_object = path_out;
         const file_out = try dir_out.createFile(
             path_out,
             .{ .truncate = true },
