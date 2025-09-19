@@ -1,8 +1,14 @@
 const std = @import("std");
+const zon = @import("build.zig.zon");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    // Gather some fields from build.zig.zon
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", zon.version);
+    options.addOption([]const u8, "name", @tagName(zon.name));
 
     // Markdown renderer library: cmark
     const cmark = b.dependency("cmark", .{});
@@ -56,6 +62,7 @@ pub fn build(b: *std.Build) void {
 
     exe_mod.addIncludePath(cmark.path("src"));
     exe_mod.linkLibrary(cmark_lib);
+    exe_mod.addOptions("options", options);
 
     const exe = b.addExecutable(.{
         .name = "zmarkgen",

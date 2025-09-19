@@ -7,6 +7,7 @@ const zon = std.zon;
 const Allocator = mem.Allocator;
 const Writer = std.Io.Writer;
 const builtin = @import("builtin");
+const options = @import("options");
 
 const c = @cImport({
     @cInclude("cmark.h");
@@ -25,8 +26,11 @@ const CliOptions = struct {
         while (args.next()) |arg| {
             if (mem.eql(u8, arg, "-h")) {
                 log.info(
-                    \\Example: zmarkgen -c my_blog.zon
-                , .{});
+                    \\Example: {s} -c my_blog.zon
+                , .{options.name});
+                process.exit(0);
+            } else if (mem.eql(u8, arg, "-v")) {
+                log.info("{s} v{s}", .{ options.name, options.version });
                 process.exit(0);
             } else if (mem.eql(u8, arg, "-r")) {
                 result.recursive = true;
