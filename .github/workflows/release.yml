@@ -1,8 +1,9 @@
 name: CI Release Build
 
 on:
-  tags:
-    - "v*"
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
