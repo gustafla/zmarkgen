@@ -1,5 +1,47 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const zon = @import("build.zig.zon");
+
+fn allMatch(comptime T: type, slice: []const T, pred: fn (T) bool) bool {
+    for (slice) |elem| {
+        if (!pred(elem)) return false;
+    }
+    return true;
+}
+
+fn cmarkVersionHeader(gpa: Allocator) []const u8 {
+    var buf = std.ArrayList(u8).empty;
+    const url = zon.dependencies.cmark.url;
+    var start = std.mem.lastIndexOfScalar(u8, url, '/').? + 1;
+    var len = std.mem.indexOfScalar(u8, url[start..], '.').?;
+    const major = url[start..][0..len];
+
+    start += len + 1;
+    len = std.mem.indexOfScalar(u8, url[start..], '.').?;
+    const minor = url[start..][0..len];
+
+    start += len + 1;
+    len = std.mem.indexOfScalar(u8, url[start..], '.').?;
+    const patch = url[start..][0..len];
+
+    std.debug.assert(allMatch(u8, major, std.ascii.isDigit));
+    std.debug.assert(allMatch(u8, minor, std.ascii.isDigit));
+    std.debug.assert(allMatch(u8, patch, std.ascii.isDigit));
+
+    buf.print(gpa,
+        \\#ifndef CMARK_VERSION_H
+        \\#define CMARK_VERSION_H
+        \\#define CMARK_VERSION (({[major]s} << 16) | ({[minor]s} << 8) | {[patch]s})
+        \\#define CMARK_VERSION_STRING "{[major]s}.{[minor]s}.{[patch]s}"
+        \\#endif
+        \\
+    , .{
+        .major = major,
+        .minor = minor,
+        .patch = patch,
+    }) catch @panic("OOM");
+    return buf.items;
+}
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -19,6 +61,20 @@ pub fn build(b: *std.Build) void {
         .strip = optimize == .ReleaseSmall,
     });
 
+    const cmark_gen_headers = b.addWriteFiles();
+    _ = cmark_gen_headers.add("cmark_export.h",
+        \\#ifndef CMARK_EXPORT_H
+        \\#define CMARK_EXPORT_H
+        \\#define CMARK_EXPORT
+        \\#define CMARK_NO_EXPORT
+        \\#endif
+        \\
+    );
+    _ = cmark_gen_headers.add(
+        "cmark_version.h",
+        cmarkVersionHeader(b.allocator),
+    );
+    cmark_mod.addIncludePath(cmark_gen_headers.getDirectory());
     cmark_mod.addCSourceFiles(.{
         .root = cmark.path("src"),
         .files = &.{
@@ -61,6 +117,7 @@ pub fn build(b: *std.Build) void {
     });
 
     exe_mod.addIncludePath(cmark.path("src"));
+    exe_mod.addIncludePath(cmark_gen_headers.getDirectory());
     exe_mod.linkLibrary(cmark_lib);
     exe_mod.addOptions("options", options);
 
