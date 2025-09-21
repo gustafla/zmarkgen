@@ -1,8 +1,24 @@
 # Zmarkgen
 
-A very simple, quick-and-dirty static site generator, written in Zig with cmark.
+[![codecov](https://codecov.io/gh/gustafla/zmarkgen/graph/badge.svg?token=QG5PM8TAM9)](https://codecov.io/gh/gustafla/zmarkgen)
 
-I made this for organizing my personal notes.
+A very simple static site generator, written in Zig with
+the [cmark](https://github.com/commonmark/cmark) library.
+
+This tool was written primarily for the purpose of organizing my personal notes.
+I do not intend to develop this into a feature-rich static site generator, for
+that purpose I recommend [zine](https://github.com/kristoff-it/zine) or
+[hugo](https://gohugo.io/).
+
+## Build
+
+This project uses the Zig build system. You need Zig 0.15.1.
+
+To build a release binary for your native architecture and OS, run
+```
+zig build -Doptimize=ReleaseSafe
+```
+After a successful build, the `zmarkgen` binary can be found in `zig-out/bin`.
 
 ## Usage
 
