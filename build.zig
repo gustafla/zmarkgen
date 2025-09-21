@@ -108,8 +108,9 @@ pub fn build(b: *std.Build) void {
     });
 
     // Main executable
+    const exe_root_source_file = b.path("src/main.zig");
     const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = exe_root_source_file,
         .target = target,
         .optimize = optimize,
         .strip = optimize == .ReleaseSmall,
@@ -155,4 +156,15 @@ pub fn build(b: *std.Build) void {
     });
     const exe_tests_run = b.addRunArtifact(exe_tests);
     test_step.dependOn(&exe_tests_run.step);
+
+    // Coverage step
+    const cov_step = b.step("cov", "Generate code coverage (using kcov)");
+    const exe_tests_llvm = b.addTest(.{
+        .root_module = exe_mod,
+        .use_llvm = true,
+        .use_lld = true,
+    });
+    const cov_run = b.addSystemCommand(&.{ "kcov", "--clean", "--include-pattern=src/", "kcov-output/" });
+    cov_run.addArtifactArg(exe_tests_llvm);
+    cov_step.dependOn(&cov_run.step);
 }
