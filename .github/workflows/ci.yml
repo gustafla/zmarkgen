@@ -15,6 +15,9 @@ jobs:
         with:
           fetch-depth: 0
       - uses: mlugg/setup-zig@v2
+      - name: Install kcov
+        run: |
+          sudo apt install -y kcov
       - name: Check formatting
         run: |
           zig build fmt
