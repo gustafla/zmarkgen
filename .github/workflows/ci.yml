@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build_and_test:
+    name: Lint, Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: mlugg/setup-zig@v2
+      - name: Check formatting
+        run: |
+          zig build fmt
+      - name: Build
+        run: |
+          zig build
+      - name: Run tests
+        run: |
+          zig build test
