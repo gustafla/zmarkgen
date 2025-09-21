@@ -382,3 +382,15 @@ pub fn main() void {
 pub const std_options: std.Options = .{
     .log_level = if (builtin.mode == .Debug) .debug else .info,
 };
+
+// #### Tests ####
+
+test "html head has head tags" {
+    var writer = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer writer.deinit();
+    try writeHtmlHead(&writer.writer, .{}, "");
+    const string = try writer.toOwnedSlice();
+    defer std.testing.allocator.free(string);
+    try std.testing.expect(std.mem.containsAtLeast(u8, string, 1, "<head>"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, string, 1, "</head>"));
+}

@@ -147,4 +147,12 @@ pub fn build(b: *std.Build) void {
         .check = true,
     });
     fmt_step.dependOn(&fmt.step);
+
+    // Unit test step
+    const test_step = b.step("test", "Run tests");
+    const exe_tests = b.addTest(.{
+        .root_module = exe_mod,
+    });
+    const exe_tests_run = b.addRunArtifact(exe_tests);
+    test_step.dependOn(&exe_tests_run.step);
 }
