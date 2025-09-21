@@ -15,9 +15,19 @@ jobs:
         with:
           fetch-depth: 0
       - uses: mlugg/setup-zig@v2
-      - name: Install kcov
+      - name: Install kcov dependencies
         run: |
-          sudo apt install -y kcov
+          sudo apt update
+          sudo apt install -y build-essential libcurl4-openssl-dev libelf-dev libdw-dev cmake
+      - name: Build and install kcov
+        run: |
+          git clone https://github.com/SimonKagstrom/kcov.git
+          cd kcov
+          mkdir build
+          cd build
+          cmake ..
+          make
+          sudo make install
       - name: Check formatting
         run: |
           zig build fmt
@@ -33,4 +43,5 @@ jobs:
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         with:
+          files: kcov-output/test/cobertura.xml
           token: ${{ secrets.CODECOV_TOKEN }}
