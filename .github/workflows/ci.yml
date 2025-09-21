@@ -24,3 +24,10 @@ jobs:
       - name: Run tests
         run: |
           zig build test
+      - name: Generate coverage report
+        run: |
+          zig build cov
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
