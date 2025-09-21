@@ -15,12 +15,17 @@ jobs:
         with:
           fetch-depth: 0
       - uses: mlugg/setup-zig@v2
-      - name: Install kcov dependencies
+      - name: Cache kcov build
+        id: cache-kcov
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/kcov
+          key: ${{ runner.os }}-kcov-1.0
+      - name: Install kcov
+        if: steps.cache-kcov.outputs.cache-hit != 'true'
         run: |
           sudo apt update
           sudo apt install -y build-essential libcurl4-openssl-dev libelf-dev libdw-dev cmake
-      - name: Build and install kcov
-        run: |
           git clone https://github.com/SimonKagstrom/kcov.git
           cd kcov
           mkdir build
