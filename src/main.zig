@@ -394,3 +394,18 @@ test "html head has head tags" {
     try std.testing.expect(std.mem.containsAtLeast(u8, string, 1, "<head>"));
     try std.testing.expect(std.mem.containsAtLeast(u8, string, 1, "</head>"));
 }
+
+test "html head has full title with site name" {
+    const site = "Zig Adventures";
+    const page = "Day 1";
+
+    var writer = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer writer.deinit();
+    try writeHtmlHead(&writer.writer, .{ .site_name = site }, page);
+    const string = try writer.toOwnedSlice();
+    defer std.testing.allocator.free(string);
+    try std.testing.expect(std.mem.containsAtLeast(u8, string, 1, "<title>"));
+    try std.testing.expect(std.mem.containsAtLeast(u8, string, 1, site));
+    try std.testing.expect(std.mem.containsAtLeast(u8, string, 1, page));
+    try std.testing.expect(std.mem.containsAtLeast(u8, string, 1, "</title>"));
+}
