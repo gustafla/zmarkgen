@@ -135,4 +135,16 @@ pub fn build(b: *std.Build) void {
     }
     const run_step = b.step("run", "Run the generator");
     run_step.dependOn(&exe_run.step);
+
+    // Linting step
+    const fmt_step = b.step("fmt", "Check formatting");
+    const fmt = b.addFmt(.{
+        .paths = &.{
+            "src/",
+            "build.zig",
+            "build.zig.zon",
+        },
+        .check = true,
+    });
+    fmt_step.dependOn(&fmt.step);
 }
