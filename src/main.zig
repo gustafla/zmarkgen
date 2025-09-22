@@ -7,6 +7,7 @@ const zon = std.zon;
 const Allocator = mem.Allocator;
 const Writer = std.Io.Writer;
 const builtin = @import("builtin");
+
 const options = @import("options");
 
 const c = @cImport({
@@ -66,6 +67,8 @@ const ConfigLoadError =
 const Config = struct {
     out_dir: []const u8 = "generated",
     charset: []const u8 = "utf-8",
+    symlink: bool = true,
+    stylesheet: ?[]const u8 = null,
     site_name: ?[]const u8 = null,
 
     pub fn load(
@@ -102,19 +105,24 @@ fn writeHtmlHead(
     config: Config,
     title: []const u8,
 ) Writer.Error!void {
-    try writer.writeAll("<head>");
+    try writer.writeAll("<head>\n");
 
     // Add charset
-    try writer.print("<meta charset=\"{s}\">", .{config.charset});
+    try writer.print("<meta charset=\"{s}\">\n", .{config.charset});
+
+    // Add stylesheet link
+    if (config.stylesheet) |name| {
+        try writer.print("<link rel=\"stylesheet\" href=\"{s}\">\n", .{name});
+    }
 
     // Add title and optional site name
     try writer.print("<title>{s}", .{title});
     if (config.site_name) |site| {
         try writer.print(" - {s}", .{site});
     }
-    try writer.writeAll("</title>");
+    try writer.writeAll("</title>\n");
 
-    try writer.writeAll("</head>");
+    try writer.writeAll("</head>\n");
 }
 
 const Error =
@@ -310,14 +318,42 @@ fn processDir(
 
         // Output HTML
         cur_verb = .@"write to";
-        try writer.writeAll("<!DOCTYPE html><html>");
+        try writer.writeAll("<!DOCTYPE html>\n<html>\n");
         try writeHtmlHead(writer, config, title);
-        try writer.writeAll("<body>");
+        try writer.writeAll("<body>\n");
         try writer.writeAll(html);
-        try writer.writeAll("</body>");
-        try writer.writeAll("</html>");
+        try writer.writeAll("</body>\n");
+        try writer.writeAll("</html>\n");
 
         try writer.flush();
+    }
+}
+
+const LinkFileError =
+    mem.Allocator.Error ||
+    fs.Dir.CopyFileError ||
+    error{FileSystem};
+
+pub fn linkFileOut(
+    allocator: Allocator,
+    symlink: bool,
+    path_in: []const u8,
+    dir_in: fs.Dir,
+    dir_out: fs.Dir,
+    filename: []const u8,
+) LinkFileError!void {
+    dir_out.deleteFile(filename) catch |e| switch (e) {
+        fs.Dir.DeleteFileError.FileNotFound => {},
+        else => return e,
+    };
+    if (symlink) {
+        const target_path = try std.fs.path.join(
+            allocator,
+            &.{ "..", path_in, filename },
+        );
+        try dir_out.symLink(target_path, filename, .{});
+    } else {
+        try dir_in.copyFile(filename, dir_out, filename, .{});
     }
 }
 
@@ -364,7 +400,7 @@ pub fn main() void {
         },
     };
 
-    // Run with an IO buffer allocated on the stack
+    // Run cmark conversions with an IO buffer allocated on the stack
     var buf: [1024]u8 = undefined;
     var diag: Diagnostic = .init;
     processDir(allocator, &buf, config, &diag, .{
@@ -374,9 +410,40 @@ pub fn main() void {
         .out = fs.cwd(),
         .subpath_out = config.out_dir,
     }) catch |e| {
-        log.err("{f}: {s}", .{ diag, @errorName(e) });
+        log.err("{f}: {t}", .{ diag, e });
         process.exit(1);
     };
+
+    // Output stylesheet etc.
+    diag.verb = .open;
+    diag.object = config.out_dir;
+    var dir_out = fs.cwd().openDir(config.out_dir, .{}) catch |e| {
+        log.err("{f}: {t}", .{ diag, e });
+        process.exit(1);
+    };
+    defer dir_out.close();
+    diag.object = opt.input_dir;
+    var dir_in = fs.cwd().openDir(opt.input_dir, .{}) catch |e| {
+        log.err("{f}: {t}", .{ diag, e });
+        process.exit(1);
+    };
+    defer dir_in.close();
+
+    if (config.stylesheet) |stylesheet| {
+        diag.verb = .create;
+        diag.object = stylesheet;
+        linkFileOut(
+            allocator,
+            config.symlink,
+            opt.input_dir,
+            dir_in,
+            dir_out,
+            stylesheet,
+        ) catch |e| {
+            log.err("{f}: {t}", .{ diag, e });
+            process.exit(1);
+        };
+    }
 }
 
 pub const std_options: std.Options = .{

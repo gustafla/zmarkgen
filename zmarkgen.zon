@@ -1,0 +1,20 @@
+.{
+    // The name of the output directory. Default: "generated".
+    //.out_dir = "generated"
+
+    // The <meta charset=...> -tag to add to HTML header. Default: "utf-8".
+    // Note that zmarkgen doesn't convert text encoding.
+    //.charset =
+
+    // Use symlink to source files where applicable,
+    // instead of copying to out_dir. Default: true.
+    //.symlink = true,
+
+    // Add a stylesheet file and corresponding <link> -tag in the HTML header.
+    // Default: null
+    .stylesheet = "style.css",
+
+    // Suffix a site name to generated <title> tags, e.g. "Page 1 - Site Name".
+    // Default: null
+    .site_name = "Zmarkgen Docs",
+}
