@@ -1,7 +1,7 @@
 - [X] Add CSS
   - https://tkt-lapio.github.io/verkkosivut/
 - [ ] Add GitHub actions workflow step to deploy doc/ to pages
-- [ ] Add index
+- [X] Add index
 - [ ] Add config option to prefix links
 - [ ] Add script or hook to autogenerate on self-hosted git systems
 - [ ] Refactor

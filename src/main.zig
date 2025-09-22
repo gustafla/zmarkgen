@@ -125,6 +125,31 @@ fn writeHtmlHead(
     try writer.writeAll("</head>\n");
 }
 
+const IndexEntry = struct {
+    path: []const u8,
+    title: []const u8,
+    short: ?[]const u8,
+};
+
+fn writeIndex(
+    writer: *Writer,
+    index: []const IndexEntry,
+    title: []const u8,
+) Writer.Error!void {
+    try writer.print("<h1>{s}</h1>\n", .{title});
+    for (index) |entry| {
+        try writer.writeAll("<div class=\"indexEntry\">");
+        try writer.print(
+            "<a href=\"{s}\"><h2>{s}</h2></a>\n",
+            .{ entry.path, entry.title },
+        );
+        if (entry.short) |short| {
+            try writer.print("<p>{s}</p>\n", .{short});
+        }
+        try writer.writeAll("</div>");
+    }
+}
+
 const Error =
     fs.File.OpenError ||
     fs.Dir.MakeError ||
@@ -177,6 +202,7 @@ fn processDir(
     io_buf: []u8,
     config: Config,
     diag: ?*Diagnostic,
+    index: ?*std.ArrayList(IndexEntry),
     args: ProcessDirArgs,
 ) Error!void {
     // Set up diagnostic writer
@@ -225,7 +251,7 @@ fn processDir(
                 // of the input directory tree. Not a proper solution.
                 if (mem.eql(u8, entry.name, config.out_dir)) continue;
                 if (args.recursive) {
-                    try processDir(allocator, io_buf, config, diag, .{
+                    try processDir(allocator, io_buf, config, diag, null, .{
                         .recursive = args.recursive,
                         .in = dir_in,
                         .subpath_in = entry.name,
@@ -314,10 +340,14 @@ fn processDir(
                 break;
             }
         }
+        cur_verb = .@"allocate buffer for";
+        cur_object = "page title";
+        title = try allocator.dupe(u8, title); // Don't free this
         c.cmark_iter_free(iter);
 
         // Output HTML
         cur_verb = .@"write to";
+        cur_object = path_out;
         try writer.writeAll("<!DOCTYPE html>\n<html>\n");
         try writeHtmlHead(writer, config, title);
         try writer.writeAll("<body>\n");
@@ -326,6 +356,17 @@ fn processDir(
         try writer.writeAll("</html>\n");
 
         try writer.flush();
+
+        // Record index entry
+        if (index) |list| {
+            cur_verb = .@"allocate buffer for";
+            cur_object = "index entry";
+            try list.append(allocator, .{
+                .path = path_out,
+                .short = null,
+                .title = title,
+            });
+        }
     }
 }
 
@@ -403,7 +444,8 @@ pub fn main() void {
     // Run cmark conversions with an IO buffer allocated on the stack
     var buf: [1024]u8 = undefined;
     var diag: Diagnostic = .init;
-    processDir(allocator, &buf, config, &diag, .{
+    var index: std.ArrayList(IndexEntry) = .empty;
+    processDir(allocator, &buf, config, &diag, &index, .{
         .recursive = opt.recursive,
         .in = fs.cwd(),
         .subpath_in = opt.input_dir,
@@ -444,6 +486,32 @@ pub fn main() void {
             process.exit(1);
         };
     }
+
+    // Output index
+    diag.verb = .create;
+    diag.object = "index.html";
+    const index_out = dir_out.createFile(diag.object, .{ .truncate = true }) catch |e| {
+        log.err("{f}: {t}", .{ diag, e });
+        process.exit(1);
+    };
+    defer index_out.close();
+    var index_writer = index_out.writer(&buf);
+    const writer = &index_writer.interface;
+
+    // TODO: Deduplicate this code
+    diag.verb = .@"write to";
+    _ = blk: {
+        writer.writeAll("<!DOCTYPE html>\n<html>\n") catch |e| break :blk e;
+        writeHtmlHead(writer, config, "Index") catch |e| break :blk e;
+        writer.writeAll("<body>\n") catch |e| break :blk e;
+        writeIndex(writer, index.items, config.site_name orelse "Index") catch |e| break :blk e;
+        writer.writeAll("</body>\n") catch |e| break :blk e;
+        writer.writeAll("</html>\n") catch |e| break :blk e;
+        writer.flush() catch |e| break :blk e;
+    } catch |e| {
+        log.err("{f}: {t}", .{ diag, e });
+        process.exit(1);
+    };
 }
 
 pub const std_options: std.Options = .{
