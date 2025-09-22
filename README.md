@@ -28,3 +28,7 @@ and generates corresponding .html files in `generated`.
 You can also specify an input directory, eg. `zmarkgen doc`.
 
 See `zmarkgen -h` for another example.
+
+## Example Site
+
+See the [GitHub Pages](https://gustafla.github.io/zmarkgen/) deployed by CI.
