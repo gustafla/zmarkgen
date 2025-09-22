@@ -1,3 +1,3 @@
-- [ ] Add CSS
+- [X] Add CSS
   - https://tkt-lapio.github.io/verkkosivut/
 - [ ] Add script or hook to autogenerate
