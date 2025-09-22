@@ -1,4 +1,4 @@
-# Using the Zig Build System to Build Your Dependencies
+# Using the Zig Build System to Build C Libraries
 
 The [build.zig](../build.zig) file in this project doesn't depend on any external
 tools like `cmake` or `git`. The release tarball from commonmark was added
