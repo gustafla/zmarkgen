@@ -21,4 +21,12 @@ code {
   padding: 2px 4px;
   vertical-align: text-bottom;
   background: #eee;
+  border-radius: 0.5em;
+}
+
+pre {
+  background: #eee;
+  display: block;
+  border-radius: 1em;
+  padding: 1em;
 }
