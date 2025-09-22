@@ -59,6 +59,7 @@ jobs:
         with:
           path: generated/
   deploy_pages:
+    name: Deploy Docs Site
     needs:
       - build_and_test
     permissions:
