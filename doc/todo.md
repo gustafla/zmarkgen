@@ -7,4 +7,6 @@
 - [ ] Add config option to prefix `hrefs`
 - [ ] Add script or hook to autogenerate on self-hosted git systems
 - [ ] Refactor
+  - [X] HTML output
+  - [ ] Filesystem traversal
 - [ ] Make checkboxes render correctly (probably switch to cmark-gfm)
