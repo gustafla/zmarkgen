@@ -171,10 +171,8 @@ const ProcessDirArgs = struct {
 };
 
 const Diagnostic = struct {
-    verb: ?Verb,
+    verb: Verb,
     object: []const u8,
-
-    const init: @This() = .{ .verb = null, .object = "" };
 
     const Verb = enum {
         open,
@@ -187,13 +185,8 @@ const Diagnostic = struct {
         @"allocate buffer for",
     };
 
-    pub fn format(self: *const @This(), w: *Writer) Writer.Error!void {
-        if (self.verb) |verb| {
-            try w.print("Failed to {s} {s}", .{
-                @tagName(verb),
-                self.object,
-            });
-        }
+    pub fn format(self: @This(), w: *Writer) Writer.Error!void {
+        try w.print("Failed to {[verb]t} {[object]s}", self);
     }
 
     pub fn set(self: ?*@This(), val: Diagnostic) void {
@@ -439,7 +432,7 @@ pub fn main() void {
 
     // Run cmark conversions with an IO buffer allocated on the stack
     var buf: [1024]u8 = undefined;
-    var diag: Diagnostic = .init;
+    var diag: Diagnostic = undefined;
     var index: std.ArrayList(IndexEntry) = .empty;
     processDir(allocator, &buf, config, &diag, &index, .{
         .recursive = opt.recursive,
