@@ -195,6 +195,12 @@ const Diagnostic = struct {
             });
         }
     }
+
+    pub fn set(self: ?*@This(), val: Diagnostic) void {
+        if (self) |diag| {
+            diag.* = val;
+        }
+    }
 };
 
 fn processDir(
@@ -205,21 +211,8 @@ fn processDir(
     index: ?*std.ArrayList(IndexEntry),
     args: ProcessDirArgs,
 ) Error!void {
-    // Set up diagnostic writer
-    var cur_verb: Diagnostic.Verb = .open;
-    var cur_object: []const u8 = "";
-    errdefer if (diag) |d| {
-        if (d.verb == null) {
-            d.* = .{
-                .verb = cur_verb,
-                .object = cur_object,
-            };
-        } // else: if diag was already set by previous call, don't overwrite
-    };
-
     // Open input subpath for iteration
-    cur_verb = .open;
-    cur_object = args.subpath_in;
+    Diagnostic.set(diag, .{ .verb = .open, .object = args.subpath_in });
     var dir_in = try args.in.openDir(
         args.subpath_in,
         .{ .iterate = true },
@@ -227,21 +220,19 @@ fn processDir(
     defer dir_in.close();
 
     // Create output subdir
-    cur_verb = .create;
-    cur_object = args.subpath_out;
+    Diagnostic.set(diag, .{ .verb = .create, .object = args.subpath_out });
     args.out.makeDir(args.subpath_out) catch |e| switch (e) {
         error.PathAlreadyExists => {},
         else => return e,
     };
 
-    cur_verb = .open;
+    Diagnostic.set(diag, .{ .verb = .open, .object = args.subpath_out });
     var dir_out = try args.out.openDir(args.subpath_out, .{});
     defer dir_out.close();
 
     var it = dir_in.iterate();
     while (blk: {
-        cur_verb = .read;
-        cur_object = args.subpath_in;
+        Diagnostic.set(diag, .{ .verb = .read, .object = args.subpath_in });
         break :blk try it.next();
     }) |entry| {
         switch (entry.kind) {
@@ -271,25 +262,26 @@ fn processDir(
         }
 
         // Open and read the input file
-        cur_verb = .open;
-        cur_object = entry.name;
+        Diagnostic.set(diag, .{ .verb = .open, .object = entry.name });
         const file_in = try dir_in.openFile(entry.name, .{});
         defer file_in.close();
 
-        cur_verb = .stat;
+        Diagnostic.set(diag, .{ .verb = .stat, .object = entry.name });
         const stat_in = try file_in.stat();
 
-        cur_verb = .@"allocate buffer for";
-        cur_object = entry.name;
+        Diagnostic.set(diag, .{
+            .verb = .@"allocate buffer for",
+            .object = entry.name,
+        });
         const md = try allocator.alloc(u8, stat_in.size);
         defer allocator.free(md);
 
-        cur_verb = .read;
+        Diagnostic.set(diag, .{ .verb = .read, .object = entry.name });
         var reader = file_in.reader(io_buf);
         try reader.interface.readSliceAll(md);
 
         // Parse markdown
-        cur_verb = .parse;
+        Diagnostic.set(diag, .{ .verb = .parse, .object = entry.name });
         const document = c.cmark_parse_document(
             md.ptr,
             md.len,
@@ -298,7 +290,7 @@ fn processDir(
         defer c.cmark_node_free(document);
 
         // Render markdown
-        cur_verb = .render;
+        Diagnostic.set(diag, .{ .verb = .render, .object = entry.name });
         const html_ptr = c.cmark_render_html(
             document,
             c.CMARK_OPT_DEFAULT,
@@ -307,15 +299,16 @@ fn processDir(
         const html = mem.span(html_ptr);
 
         // Open output file
-        cur_verb = .@"allocate buffer for";
-        cur_object = "a new filename";
+        Diagnostic.set(diag, .{
+            .verb = .@"allocate buffer for",
+            .object = "a new filename",
+        });
         const path_out = try mem.concat(allocator, u8, &.{
             entry.name[0..(entry.name.len - ".md".len)],
             ".html",
         }); // Don't free path_out!
 
-        cur_verb = .create;
-        cur_object = path_out;
+        Diagnostic.set(diag, .{ .verb = .create, .object = path_out });
         const file_out = try dir_out.createFile(
             path_out,
             .{ .truncate = true },
@@ -340,14 +333,15 @@ fn processDir(
                 break;
             }
         }
-        cur_verb = .@"allocate buffer for";
-        cur_object = "page title";
+        Diagnostic.set(diag, .{
+            .verb = .@"allocate buffer for",
+            .object = "page title",
+        });
         title = try allocator.dupe(u8, title); // Don't free this
         c.cmark_iter_free(iter);
 
         // Output HTML
-        cur_verb = .@"write to";
-        cur_object = path_out;
+        Diagnostic.set(diag, .{ .verb = .@"write to", .object = path_out });
         try writer.writeAll("<!DOCTYPE html>\n<html>\n");
         try writeHtmlHead(writer, config, title);
         try writer.writeAll("<body>\n");
@@ -359,8 +353,10 @@ fn processDir(
 
         // Record index entry
         if (index) |list| {
-            cur_verb = .@"allocate buffer for";
-            cur_object = "index entry";
+            Diagnostic.set(diag, .{
+                .verb = .@"allocate buffer for",
+                .object = "index entry",
+            });
             try list.append(allocator, .{
                 .path = path_out,
                 .short = null,
