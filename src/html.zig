@@ -7,21 +7,39 @@ pub const IndexEntry = struct {
     short: ?[]const u8,
 };
 
-pub fn writeHead(context: anytype) Writer.Error!void {
-    const writer = context.writer;
+pub const Index = struct {
+    items: []const IndexEntry,
+    title: []const u8,
+};
+
+pub const Head = struct {
+    charset: []const u8,
+    stylesheet: ?[]const u8,
+    title: []const u8,
+    title_suffix: ?[]const u8,
+};
+
+pub fn Document(comptime Body: type) type {
+    return struct {
+        head: Head,
+        body: Body,
+    };
+}
+
+pub fn writeHead(writer: *Writer, head: Head) Writer.Error!void {
     try writer.writeAll("<head>\n");
 
     // Add charset
-    try writer.print("<meta charset=\"{s}\">\n", .{context.charset});
+    try writer.print("<meta charset=\"{s}\">\n", .{head.charset});
 
     // Add stylesheet link
-    if (context.stylesheet) |name| {
+    if (head.stylesheet) |name| {
         try writer.print("<link rel=\"stylesheet\" href=\"{s}\">\n", .{name});
     }
 
     // Add title and optional suffix
-    try writer.print("<title>{s}", .{context.title});
-    if (context.title_suffix) |suffix| {
+    try writer.print("<title>{s}", .{head.title});
+    if (head.title_suffix) |suffix| {
         try writer.print(" - {s}", .{suffix});
     }
     try writer.writeAll("</title>\n");
@@ -29,43 +47,46 @@ pub fn writeHead(context: anytype) Writer.Error!void {
     try writer.writeAll("</head>\n");
 }
 
-pub fn writeFragment(context: anytype) Writer.Error!void {
-    try context.writer.writeAll(context.html);
-}
-
 pub fn writeBody(
-    context: anytype,
-    innerWrite: fn (anytype) Writer.Error!void,
+    comptime Body: type,
+    writer: *Writer,
+    body: Body,
+    innerWrite: fn (*Writer, Body) Writer.Error!void,
 ) Writer.Error!void {
-    try context.writer.writeAll("<body>\n");
-    try innerWrite(context);
-    try context.writer.writeAll("</body>\n");
+    try writer.writeAll("<body>\n");
+    try innerWrite(writer, body);
+    try writer.writeAll("</body>\n");
 }
 
-pub fn writeDocument(
-    context: anytype,
-    bodyWrite: fn (anytype) Writer.Error!void,
+pub fn writeIndex(
+    writer: *Writer,
+    index: Index,
 ) Writer.Error!void {
-    try context.writer.writeAll("<!DOCTYPE html>\n<html>\n");
-    try writeHead(context);
-    try writeBody(context, bodyWrite);
-    try context.writer.writeAll("</html>\n");
-    try context.writer.flush();
-}
-
-pub fn writeIndex(context: anytype) Writer.Error!void {
-    try context.writer.print("<h1>{s}</h1>\n", .{context.title});
-    for (context.index) |entry| {
-        try context.writer.writeAll("<div class=\"indexEntry\">");
-        try context.writer.print(
+    try writer.print("<h1>{s}</h1>\n", .{index.title});
+    for (index.items) |entry| {
+        try writer.writeAll("<div class=\"indexEntry\">");
+        try writer.print(
             "<a href=\"{s}\"><h2>{s}</h2></a>\n",
             .{ entry.path, entry.title },
         );
         if (entry.short) |short| {
-            try context.writer.print("<p>{s}</p>\n", .{short});
+            try writer.print("<p>{s}</p>\n", .{short});
         }
-        try context.writer.writeAll("</div>");
+        try writer.writeAll("</div>");
     }
+}
+
+pub fn writeDocument(
+    comptime Body: type,
+    writer: *Writer,
+    document: Document(Body),
+    bodyWrite: fn (*Writer, Body) Writer.Error!void,
+) Writer.Error!void {
+    try writer.writeAll("<!DOCTYPE html>\n<html>\n");
+    try writeHead(writer, document.head);
+    try writeBody(Body, writer, document.body, bodyWrite);
+    try writer.writeAll("</html>\n");
+    try writer.flush();
 }
 
 // #### Tests ####
@@ -73,8 +94,7 @@ pub fn writeIndex(context: anytype) Writer.Error!void {
 test "html head has head tags" {
     var writer = std.Io.Writer.Allocating.init(std.testing.allocator);
     defer writer.deinit();
-    try writeHead(.{
-        .writer = &writer.writer,
+    try writeHead(&writer.writer, .{
         .charset = "utf-8",
         .stylesheet = null,
         .title = "Index",
@@ -92,8 +112,7 @@ test "html head has full title with site name" {
 
     var writer = std.Io.Writer.Allocating.init(std.testing.allocator);
     defer writer.deinit();
-    try writeHead(.{
-        .writer = &writer.writer,
+    try writeHead(&writer.writer, .{
         .charset = "utf-8",
         .stylesheet = null,
         .title = page,

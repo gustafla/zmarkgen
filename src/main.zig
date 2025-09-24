@@ -237,14 +237,15 @@ fn processDir(
 
         // Output HTML
         Diagnostic.set(diag, .{ .verb = .write, .object = path_out });
-        try html.writeDocument(.{
-            .writer = writer,
-            .title = title,
-            .title_suffix = conf.site_name,
-            .charset = conf.charset,
-            .stylesheet = conf.stylesheet,
-            .html = html_src,
-        }, html.writeFragment);
+        try html.writeDocument([]const u8, writer, .{
+            .head = .{
+                .title = title,
+                .title_suffix = conf.site_name,
+                .charset = conf.charset,
+                .stylesheet = conf.stylesheet,
+            },
+            .body = html_src,
+        }, Writer.writeAll);
 
         // Record index entry
         if (index) |list| {
@@ -388,13 +389,18 @@ pub fn main() void {
 
     // Write index
     diag.verb = .write;
-    html.writeDocument(.{
-        .writer = writer,
-        .title = conf.site_name orelse "Index",
-        .title_suffix = null,
-        .charset = conf.charset,
-        .stylesheet = conf.stylesheet,
-        .index = index.items,
+    const title = conf.site_name orelse "Index";
+    html.writeDocument(html.Index, writer, .{
+        .head = .{
+            .title = title,
+            .title_suffix = null,
+            .charset = conf.charset,
+            .stylesheet = conf.stylesheet,
+        },
+        .body = .{
+            .title = title,
+            .items = index.items,
+        },
     }, html.writeIndex) catch |e| {
         log.err("{f}: {t}", .{ diag, e });
         process.exit(1);
