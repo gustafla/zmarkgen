@@ -6,8 +6,6 @@ specified by the `-c` flag.
 
 ## Example
 
-See also [repository's configuration](../zmarkgen.zon).
-
 ```zig
 .{
     // The name of the output directory. Default: "generated".
@@ -31,3 +29,5 @@ See also [repository's configuration](../zmarkgen.zon).
     .site_name = "My Epic Site",
 }
 ```
+
+See also [repository's configuration file](zmarkgen.zon).
