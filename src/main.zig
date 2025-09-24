@@ -96,10 +96,9 @@ pub fn main() void {
     };
 
     // Run cmark conversions with an IO buffer allocated on the stack
-    var buf: [1024]u8 = undefined;
     var diag: Diagnostic = undefined;
     var index: std.ArrayList(html.IndexEntry) = .empty;
-    md.processDir(allocator, &buf, conf, &diag, &index, .{
+    md.processDir(allocator, conf, &diag, &index, .{
         .recursive = opt.recursive,
         .in = std.fs.cwd(),
         .subpath_in = opt.input_dir,
@@ -144,6 +143,7 @@ pub fn main() void {
     }
 
     // Output index
+    var buf: [1024]u8 = undefined;
     Diagnostic.set(&diag, .{ .verb = .create, .object = "index.html" });
     const index_out = dir_out.createFile(diag.object, .{ .truncate = true }) catch |e| {
         std.log.err("{f}: {t}", .{ diag, e });
