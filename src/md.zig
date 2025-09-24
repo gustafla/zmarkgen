@@ -297,7 +297,8 @@ fn processDirRecursive(
                     );
                 }
             },
-            .file => {
+            .sym_link, .file => {
+                std.log.debug("File {s}", .{entry.name});
                 if (std.mem.endsWith(u8, entry.name, ".md")) {
                     try processMdFile(
                         allocator,

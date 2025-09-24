@@ -1,6 +1,5 @@
 # Backlog
 
-- [ ] Symlink following for input
 - [ ] Add config option to prefix `hrefs` that point outside of input directory
 - [ ] Handle root-relative `hrefs` so that they become relative (file://-urls)
 - [ ] Improve CLI argument parsing and help text
@@ -16,6 +15,7 @@
 
 ## Done
 
+- [X] Symlink following for input
 - [X] Refactor
   - [X] HTML output
   - [X] Filesystem traversal
