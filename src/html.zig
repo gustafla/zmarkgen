@@ -1,5 +1,6 @@
 const std = @import("std");
 const Writer = std.Io.Writer;
+const Error = Writer.Error;
 
 pub const IndexEntry = struct {
     path: []const u8,
@@ -26,7 +27,7 @@ pub fn Document(comptime Body: type) type {
     };
 }
 
-pub fn writeHead(writer: *Writer, head: Head) Writer.Error!void {
+pub fn writeHead(writer: *Writer, head: Head) Error!void {
     try writer.writeAll("<head>\n");
 
     // Add charset
@@ -51,8 +52,8 @@ pub fn writeBody(
     comptime Body: type,
     writer: *Writer,
     body: Body,
-    innerWrite: fn (*Writer, Body) Writer.Error!void,
-) Writer.Error!void {
+    innerWrite: fn (*Writer, Body) Error!void,
+) Error!void {
     try writer.writeAll("<body>\n");
     try innerWrite(writer, body);
     try writer.writeAll("</body>\n");
@@ -61,7 +62,7 @@ pub fn writeBody(
 pub fn writeIndex(
     writer: *Writer,
     index: Index,
-) Writer.Error!void {
+) Error!void {
     try writer.print("<h1>{s}</h1>\n", .{index.title});
     for (index.items) |entry| {
         try writer.writeAll("<div class=\"indexEntry\">");
@@ -80,8 +81,8 @@ pub fn writeDocument(
     comptime Body: type,
     writer: *Writer,
     document: Document(Body),
-    bodyWrite: fn (*Writer, Body) Writer.Error!void,
-) Writer.Error!void {
+    bodyWrite: fn (*Writer, Body) Error!void,
+) Error!void {
     try writer.writeAll("<!DOCTYPE html>\n<html>\n");
     try writeHead(writer, document.head);
     try writeBody(Body, writer, document.body, bodyWrite);
@@ -92,7 +93,7 @@ pub fn writeDocument(
 // #### Tests ####
 
 test "html head has head tags" {
-    var writer = std.Io.Writer.Allocating.init(std.testing.allocator);
+    var writer = Writer.Allocating.init(std.testing.allocator);
     defer writer.deinit();
     try writeHead(&writer.writer, .{
         .charset = "utf-8",
@@ -110,7 +111,7 @@ test "html head has full title with site name" {
     const site = "Zig Adventures";
     const page = "Day 1";
 
-    var writer = std.Io.Writer.Allocating.init(std.testing.allocator);
+    var writer = Writer.Allocating.init(std.testing.allocator);
     defer writer.deinit();
     try writeHead(&writer.writer, .{
         .charset = "utf-8",

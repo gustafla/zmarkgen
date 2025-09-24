@@ -4,6 +4,12 @@ const mem = std.mem;
 const zon = std.zon;
 const Allocator = mem.Allocator;
 
+out_dir: []const u8 = "generated",
+charset: []const u8 = "utf-8",
+symlink: bool = true,
+stylesheet: ?[]const u8 = null,
+site_name: ?[]const u8 = null,
+
 pub const Error =
     fs.File.StatError ||
     fs.File.OpenError ||
@@ -11,19 +17,11 @@ pub const Error =
     std.Io.Reader.Error ||
     error{ ParseZon, OutDirTooComplex };
 
-pub const Config = struct {
-    out_dir: []const u8 = "generated",
-    charset: []const u8 = "utf-8",
-    symlink: bool = true,
-    stylesheet: ?[]const u8 = null,
-    site_name: ?[]const u8 = null,
-};
-
 pub fn load(
     allocator: Allocator,
     path: []const u8,
     diagnostics: ?*zon.parse.Diagnostics,
-) Error!Config {
+) Error!@This() {
     const file = try fs.cwd().openFile(path, .{});
     defer file.close();
 
@@ -35,7 +33,7 @@ pub fn load(
     try reader.interface.readSliceAll(buf);
 
     const conf = try zon.parse.fromSlice(
-        Config,
+        @This(),
         allocator,
         buf,
         diagnostics,
