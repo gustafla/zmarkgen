@@ -3,6 +3,7 @@
 - [ ] Implement index short text previews
 - [ ] Add script or hook to autogenerate on self-hosted git systems
 - [ ] Make checkboxes render correctly (probably switch to cmark-gfm)
+- [ ] Refactor index.zig to use Arena allocation
 
 ## Docs CSS improvements
 

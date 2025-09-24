@@ -282,7 +282,7 @@ fn processMdFile(
 
     // Values of `path_out` and `title` are copied to the index.
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "index entry" });
-    _ = try section.addEntry(allocator, href, title, null);
+    try section.addEntry(allocator, href, title, null);
 }
 
 /// Recursively processes a directory, converting markdown files to HTML.
@@ -304,17 +304,17 @@ fn processDirRecursive(
         if (e != Error.PathAlreadyExists) return e;
     };
 
-    // Get directory depth, create root-relative link prefix
+    // Get directory depth, create root-relative link prefix.
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "relative path" });
     const depth = std.mem.count(u8, paths.out, &.{std.fs.path.sep});
     const root_rel = try file.dotdot(allocator, depth);
     defer allocator.free(root_rel);
 
-    // Create index section
+    // Create index section.
     const slash = std.mem.indexOfScalar(u8, paths.out, std.fs.path.sep);
     const section_title = if (depth == 0) null else paths.out[slash.? + 1 ..];
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "index section" });
-    const section = try index.addSection(allocator, section_title);
+    const section_index = try index.addSection(allocator, section_title);
 
     // Iterate over directory entries.
     var it = dir_in.iterate();
@@ -322,7 +322,10 @@ fn processDirRecursive(
         Diagnostic.set(diag, .{ .verb = .read, .object = paths.in });
         const entry = try it.next() orelse break;
 
-        // Allocate subpaths for entry
+        // Get a fresh, valid pointer to our section.
+        const section = index.getSection(section_index);
+
+        // Allocate subpaths for entry.
         Diagnostic.set(diag, .{ .verb = .allocate, .object = "paths" });
         const subpaths = try paths.join(allocator, entry.name);
         defer subpaths.deinit(allocator);

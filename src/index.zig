@@ -15,14 +15,12 @@ pub const Section = struct {
         path: []const u8,
         title: []const u8,
         short: ?[]const u8,
-    ) Allocator.Error!*Entry {
-        const entry = try self.entries.addOne(allocator);
-        entry.* = .{
+    ) Allocator.Error!void {
+        try self.entries.append(allocator, .{
             .path = try allocator.dupe(u8, path),
             .title = try allocator.dupe(u8, title),
             .short = if (short) |s| try allocator.dupe(u8, s) else null,
-        };
-        return entry;
+        });
     }
 };
 
@@ -64,13 +62,16 @@ pub fn addSection(
     self: *@This(),
     allocator: Allocator,
     title: ?[]const u8,
-) Allocator.Error!*Section {
-    const section = try self.sections.addOne(allocator);
-    section.* = .{
+) Allocator.Error!usize {
+    try self.sections.append(allocator, .{
         .title = if (title) |t| try allocator.dupe(u8, t) else null,
         .entries = .empty,
-    };
-    return section;
+    });
+    return self.sections.items.len - 1;
+}
+
+pub fn getSection(self: *@This(), index: usize) *Section {
+    return &self.sections.items[index];
 }
 
 pub fn writeHtml(writer: *Writer, index: @This()) Writer.Error!void {
