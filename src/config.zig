@@ -30,6 +30,7 @@ pub fn load(
 
     const stat = try file.stat();
     const buf = try allocator.allocSentinel(u8, stat.size, 0);
+    defer allocator.free(buf);
     try reader.interface.readSliceAll(buf);
 
     const conf = try zon.parse.fromSlice(
