@@ -31,3 +31,11 @@ pre {
   border-radius: 1em;
   padding: 1em;
 }
+
+.checklist > ul {
+  list-style-type: none;
+}
+
+.checklist input[type="checkbox"] {
+    margin-right: 1em;
+}
