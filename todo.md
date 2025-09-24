@@ -1,5 +1,6 @@
 # Backlog
 
+- [ ] Symlink following for input
 - [ ] Add config option to prefix `hrefs` that point outside of input directory
 - [ ] Handle root-relative `hrefs` so that they become relative (file://-urls)
 - [ ] Add script or hook to autogenerate on self-hosted git systems
