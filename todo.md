@@ -1,6 +1,5 @@
 # Backlog
 
-- [ ] Add config option to prefix `hrefs` that point outside of input directory
 - [ ] Handle root-relative `hrefs` so that they become relative (file://-urls)
 - [ ] Improve CLI argument parsing and help text
 - [ ] Implement index sections for recursive mode

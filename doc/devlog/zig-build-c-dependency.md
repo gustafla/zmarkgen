@@ -1,8 +1,8 @@
 # Using the Zig Build System to Build C Libraries
 
-The [build.zig](../../build.zig) file in this project doesn't depend on any external
+The [build.zig](build.zig) file in this project doesn't depend on any external
 tools like `cmake` or `git`. The release tarball from commonmark was added
-directly to [build.zig.zon](../../build.zig.zon) via running
+directly to [build.zig.zon](build.zig.zon) via running
 ```
 zig fetch --save https://github.com/commonmark/cmark/archive/refs/tags/0.31.1.tar.gz
 ```
@@ -78,6 +78,6 @@ exe_mod.linkLibrary(cmark_lib);
 
 ### Full details
 
-See [build.zig](../../build.zig) for the full details. It has version number parsing
+See [build.zig](build.zig) for the full details. It has version number parsing
 from the source URL so that the `cmark_version.h` is generated from a single
 source of truth.
