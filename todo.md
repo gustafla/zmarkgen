@@ -3,10 +3,11 @@
 - [ ] Symlink following for input
 - [ ] Add config option to prefix `hrefs` that point outside of input directory
 - [ ] Handle root-relative `hrefs` so that they become relative (file://-urls)
-- [ ] Add script or hook to autogenerate on self-hosted git systems
-- [ ] Make checkboxes render correctly (probably switch to cmark-gfm)
+- [ ] Improve CLI argument parsing and help text
 - [ ] Implement index sections for recursive mode
 - [ ] Implement index short text previews
+- [ ] Add script or hook to autogenerate on self-hosted git systems
+- [ ] Make checkboxes render correctly (probably switch to cmark-gfm)
 
 ## Done
 
