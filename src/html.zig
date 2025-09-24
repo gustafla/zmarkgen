@@ -2,17 +2,6 @@ const std = @import("std");
 const Writer = std.Io.Writer;
 const Error = Writer.Error;
 
-pub const IndexEntry = struct {
-    path: []const u8,
-    title: []const u8,
-    short: ?[]const u8,
-};
-
-pub const Index = struct {
-    items: []const IndexEntry,
-    title: []const u8,
-};
-
 pub const Head = struct {
     charset: []const u8,
     stylesheet: ?[]const u8,
@@ -57,24 +46,6 @@ pub fn writeBody(
     try writer.writeAll("<body>\n");
     try innerWrite(writer, body);
     try writer.writeAll("</body>\n");
-}
-
-pub fn writeIndex(
-    writer: *Writer,
-    index: Index,
-) Error!void {
-    try writer.print("<h1>{s}</h1>\n", .{index.title});
-    for (index.items) |entry| {
-        try writer.writeAll("<div class=\"indexEntry\">");
-        try writer.print(
-            "<a href=\"{s}\"><h2>{s}</h2></a>\n",
-            .{ entry.path, entry.title },
-        );
-        if (entry.short) |short| {
-            try writer.print("<p>{s}</p>\n", .{short});
-        }
-        try writer.writeAll("</div>");
-    }
 }
 
 pub fn writeDocument(

@@ -5,6 +5,7 @@ const Writer = std.Io.Writer;
 const Config = @import("config.zig");
 const Diagnostic = @import("diagnostic.zig");
 const html = @import("html.zig");
+const Index = @import("index.zig");
 const file = @import("file.zig");
 
 const c = @cImport({
@@ -151,7 +152,7 @@ fn fixHrefs(
 fn processIndex(
     conf: Config,
     diag: ?*Diagnostic,
-    index: []const html.IndexEntry,
+    index: Index,
     dir_out: std.fs.Dir,
     filename: []const u8,
 ) Error!void {
@@ -167,19 +168,15 @@ fn processIndex(
 
     // Write index HTML.
     Diagnostic.set(diag, .{ .verb = .write, .object = filename });
-    const title = conf.site_name orelse "Index";
-    try html.writeDocument(html.Index, writer, .{
+    try html.writeDocument(Index, writer, .{
         .head = .{
-            .title = title,
+            .title = index.title,
             .title_suffix = null,
             .charset = conf.charset,
             .stylesheet = conf.stylesheet,
         },
-        .body = .{
-            .title = title,
-            .items = index,
-        },
-    }, html.writeIndex);
+        .body = index,
+    }, Index.writeHtml);
 }
 
 /// Processes a single markdown file: reads, renders, and writes it as HTML.
@@ -187,7 +184,7 @@ fn processMdFile(
     allocator: Allocator,
     conf: Config,
     diag: ?*Diagnostic,
-    index: ?*std.ArrayList(html.IndexEntry),
+    section: *Index.Section,
     root_rel: []const u8,
     paths: Paths,
 ) Error!void {
@@ -240,11 +237,11 @@ fn processMdFile(
         document,
         std.fs.path.basename(paths.in),
     );
-    errdefer allocator.free(title);
+    defer allocator.free(title);
 
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "filename" });
     const path_out = try getHtmlPath(allocator, paths.out);
-    errdefer allocator.free(path_out);
+    defer allocator.free(path_out);
 
     // Create the output file.
     Diagnostic.set(diag, .{ .verb = .create, .object = path_out });
@@ -278,23 +275,14 @@ fn processMdFile(
     try writer.flush();
 
     // Record entry in the index if provided.
-    if (index) |list| {
-        Diagnostic.set(diag, .{ .verb = .allocate, .object = "index" });
-        // Get path without output directory prefix.
-        const sep = std.mem.indexOfScalar(u8, path_out, std.fs.path.sep).?;
-        const href = path_out[sep + 1 ..];
+    Diagnostic.set(diag, .{ .verb = .allocate, .object = "index" });
+    // Get path without output directory prefix.
+    const sep = std.mem.indexOfScalar(u8, path_out, std.fs.path.sep).?;
+    const href = path_out[sep + 1 ..];
 
-        // Ownership of `path_out` and `title` is transferred to the list.
-        try list.append(allocator, .{
-            .path = href,
-            .short = null,
-            .title = title,
-        });
-    } else {
-        // If there's no index, we are responsible for freeing the memory.
-        allocator.free(path_out);
-        allocator.free(title);
-    }
+    // Values of `path_out` and `title` are copied to the index.
+    Diagnostic.set(diag, .{ .verb = .allocate, .object = "index entry" });
+    _ = try section.addEntry(allocator, href, title, null);
 }
 
 /// Recursively processes a directory, converting markdown files to HTML.
@@ -302,7 +290,7 @@ fn processDirRecursive(
     allocator: Allocator,
     diag: ?*Diagnostic,
     conf: Config,
-    index: ?*std.ArrayList(html.IndexEntry),
+    index: *Index,
     allow_recursion: bool,
     paths: Paths,
 ) Error!void {
@@ -311,11 +299,23 @@ fn processDirRecursive(
     var dir_in = try std.fs.cwd().openDir(paths.in, .{ .iterate = true });
     defer dir_in.close();
 
-    // Create and the corresponding output directory.
+    // Create the corresponding output directory.
     Diagnostic.set(diag, .{ .verb = .create, .object = paths.out });
     std.fs.cwd().makeDir(paths.out) catch |e| {
         if (e != Error.PathAlreadyExists) return e;
     };
+
+    // Get directory depth, create root-relative link prefix
+    Diagnostic.set(diag, .{ .verb = .allocate, .object = "relative path" });
+    const depth = std.mem.count(u8, paths.out, &.{std.fs.path.sep});
+    const root_rel = try file.dotdot(allocator, depth);
+    defer allocator.free(root_rel);
+
+    // Create index section
+    const slash = std.mem.indexOfScalar(u8, paths.out, std.fs.path.sep);
+    const section_title = if (depth == 0) null else paths.out[slash.? + 1 ..];
+    Diagnostic.set(diag, .{ .verb = .allocate, .object = "index section" });
+    const section = try index.addSection(allocator, section_title);
 
     // Iterate over directory entries.
     var it = dir_in.iterate();
@@ -327,12 +327,6 @@ fn processDirRecursive(
         Diagnostic.set(diag, .{ .verb = .allocate, .object = "paths" });
         const subpaths = try paths.join(allocator, entry.name);
         defer subpaths.deinit(allocator);
-
-        // Get directory depth, create root-relative link prefix
-        Diagnostic.set(diag, .{ .verb = .allocate, .object = "relative path" });
-        const depth = std.mem.count(u8, paths.out, &.{std.fs.path.sep});
-        const root_rel = try file.dotdot(allocator, depth);
-        defer allocator.free(root_rel);
 
         switch (entry.kind) {
             .directory => {
@@ -359,7 +353,7 @@ fn processDirRecursive(
                         allocator,
                         conf,
                         diag,
-                        index,
+                        section,
                         root_rel,
                         subpaths,
                     );
@@ -376,7 +370,7 @@ fn processDirRecursive(
                     );
                 }
             },
-            else => {}, // Ignore symlinks, block devices, etc.
+            else => {}, // Ignore block devices etc.
         }
     }
 }
@@ -391,7 +385,8 @@ pub fn processDir(
     paths: Paths,
 ) Error!void {
     // Initialize index list.
-    var index: std.ArrayList(html.IndexEntry) = .empty;
+    Diagnostic.set(diag, .{ .verb = .allocate, .object = "index" });
+    var index = try Index.init(allocator, conf.site_name orelse "Index");
     defer index.deinit(allocator);
 
     // Process the directory tree.
@@ -401,5 +396,5 @@ pub fn processDir(
     Diagnostic.set(diag, .{ .verb = .open, .object = paths.out });
     var dir_out = try std.fs.cwd().openDir(paths.out, .{});
     defer dir_out.close();
-    try processIndex(conf, diag, index.items, dir_out, "index.html");
+    try processIndex(conf, diag, index, dir_out, "index.html");
 }

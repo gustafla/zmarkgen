@@ -1,7 +1,6 @@
 # Backlog
 
 - [ ] Improve CLI argument parsing and help text
-- [ ] Implement index sections for recursive mode
 - [ ] Implement index short text previews
 - [ ] Add script or hook to autogenerate on self-hosted git systems
 - [ ] Make checkboxes render correctly (probably switch to cmark-gfm)
@@ -13,6 +12,7 @@
 
 ## Done
 
+- [X] Implement index sections for recursive mode
 - [X] Handle root-relative `hrefs` so that they become relative (file://-urls)
   - [Example](/configuration.md)
 - [X] Symlink following for input
