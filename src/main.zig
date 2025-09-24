@@ -262,28 +262,35 @@ fn processDir(
 const LinkFileError =
     mem.Allocator.Error ||
     fs.Dir.CopyFileError ||
+    fs.Dir.DeleteFileError ||
     error{FileSystem};
 
-pub fn linkFileOut(
+const FileSource = union(enum) {
+    symlink: struct { path_in: []const u8 },
+    copy: struct { dir_in: fs.Dir },
+};
+
+fn linkFileOut(
     allocator: Allocator,
-    symlink: bool,
-    path_in: []const u8,
-    dir_in: fs.Dir,
+    source: FileSource,
     dir_out: fs.Dir,
     filename: []const u8,
 ) LinkFileError!void {
-    dir_out.deleteFile(filename) catch |e| switch (e) {
-        fs.Dir.DeleteFileError.FileNotFound => {},
-        else => return e,
+    dir_out.deleteFile(filename) catch |e| {
+        if (e != LinkFileError.FileNotFound) return e;
     };
-    if (symlink) {
-        const target_path = try std.fs.path.join(
-            allocator,
-            &.{ "..", path_in, filename },
-        );
-        try dir_out.symLink(target_path, filename, .{});
-    } else {
-        try dir_in.copyFile(filename, dir_out, filename, .{});
+    switch (source) {
+        .symlink => |ln| {
+            const target_path = try std.fs.path.join(
+                allocator,
+                &.{ "..", ln.path_in, filename },
+            );
+            defer allocator.free(target_path);
+            try dir_out.symLink(target_path, filename, .{});
+        },
+        .copy => |cp| {
+            try cp.dir_in.copyFile(filename, dir_out, filename, .{});
+        },
     }
 }
 
@@ -360,14 +367,16 @@ pub fn main() void {
     };
     defer dir_in.close();
 
+    const css_source: FileSource = if (conf.symlink)
+        .{ .symlink = .{ .path_in = opt.input_dir } }
+    else
+        .{ .copy = .{ .dir_in = dir_in } };
     if (conf.stylesheet) |stylesheet| {
         diag.verb = .create;
         diag.object = stylesheet;
         linkFileOut(
             allocator,
-            conf.symlink,
-            opt.input_dir,
-            dir_in,
+            css_source,
             dir_out,
             stylesheet,
         ) catch |e| {
@@ -377,8 +386,7 @@ pub fn main() void {
     }
 
     // Output index
-    diag.verb = .create;
-    diag.object = "index.html";
+    Diagnostic.set(&diag, .{ .verb = .create, .object = "index.html" });
     const index_out = dir_out.createFile(diag.object, .{ .truncate = true }) catch |e| {
         log.err("{f}: {t}", .{ diag, e });
         process.exit(1);
@@ -388,7 +396,7 @@ pub fn main() void {
     const writer = &index_writer.interface;
 
     // Write index
-    diag.verb = .write;
+    Diagnostic.set(&diag, .{ .verb = .write, .object = "index.html" });
     const title = conf.site_name orelse "Index";
     html.writeDocument(html.Index, writer, .{
         .head = .{
