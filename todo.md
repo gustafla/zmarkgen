@@ -9,6 +9,11 @@
 - [ ] Add script or hook to autogenerate on self-hosted git systems
 - [ ] Make checkboxes render correctly (probably switch to cmark-gfm)
 
+## Docs CSS improvements
+
+- [ ] Fonts
+- [ ] Dark and light modes
+
 ## Done
 
 - [X] Refactor
