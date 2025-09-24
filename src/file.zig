@@ -7,31 +7,45 @@ pub const Error =
     std.fs.Dir.DeleteFileError ||
     error{FileSystem};
 
-pub const Source = union(enum) {
-    symlink: struct { path_in: []const u8 },
-    copy: struct { dir_in: std.fs.Dir },
-};
+pub fn dotdot(allocator: Allocator, count: usize) Allocator.Error![]const u8 {
+    var str: [3]u8 = .{ '.', '.', undefined };
+    str[str.len - 1] = std.fs.path.sep;
+    const path = try allocator.alloc(u8, str.len * count);
+    for (0..count) |i| {
+        @memcpy(path[str.len * i ..][0..3], &str);
+    }
+    return path;
+}
 
 pub fn linkOut(
     allocator: Allocator,
-    source: Source,
-    dir_out: std.fs.Dir,
-    filename: []const u8,
+    symlink: bool,
+    subpath_in: []const u8,
+    subpath_out: []const u8,
 ) Error!void {
-    dir_out.deleteFile(filename) catch |e| {
+    const cwd = std.fs.cwd();
+
+    // Delete preexisting link/file
+    cwd.deleteFile(subpath_out) catch |e| {
         if (e != Error.FileNotFound) return e;
     };
-    switch (source) {
-        .symlink => |ln| {
-            const target_path = try std.fs.path.join(
-                allocator,
-                &.{ "..", ln.path_in, filename },
-            );
-            defer allocator.free(target_path);
-            try dir_out.symLink(target_path, filename, .{});
-        },
-        .copy => |cp| {
-            try cp.dir_in.copyFile(filename, dir_out, filename, .{});
-        },
+
+    if (symlink) {
+        // Build varying length prefix of "../"
+        const upper = try dotdot(
+            allocator,
+            std.mem.count(u8, subpath_out, &.{std.fs.path.sep}),
+        );
+        defer allocator.free(upper);
+
+        // Append subpath_in
+        const path = try std.mem.concat(allocator, u8, &.{ upper, subpath_in });
+        defer allocator.free(path);
+
+        // Create symlink
+        try cwd.symLink(path, subpath_out, .{});
+    } else {
+        // Copy file
+        try std.fs.Dir.copyFile(cwd, subpath_in, cwd, subpath_out, .{});
     }
 }

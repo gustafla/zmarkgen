@@ -13,6 +13,7 @@ const Verb = enum {
     parse,
     render,
     allocate,
+    copy,
 };
 
 pub fn format(self: @This(), w: *Writer) Writer.Error!void {

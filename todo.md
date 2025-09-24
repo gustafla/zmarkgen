@@ -1,8 +1,11 @@
 # Backlog
 
-- [ ] Add config option to prefix `hrefs`
+- [ ] Add config option to prefix `hrefs` that point outside of input directory
+- [ ] Handle root-relative `hrefs` so that they become relative (file://-urls)
 - [ ] Add script or hook to autogenerate on self-hosted git systems
 - [ ] Make checkboxes render correctly (probably switch to cmark-gfm)
+- [ ] Implement index sections for recursive mode
+- [ ] Implement index short text previews
 
 ## Done
 

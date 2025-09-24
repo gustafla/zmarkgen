@@ -95,89 +95,23 @@ pub fn main() void {
         },
     };
 
-    // Run cmark conversions with an IO buffer allocated on the stack
+    // Run the site generator.
     var diag: Diagnostic = undefined;
-    var index: std.ArrayList(html.IndexEntry) = .empty;
-    md.processDir(allocator, conf, &diag, &index, .{
-        .recursive = opt.recursive,
-        .in = std.fs.cwd(),
-        .subpath_in = opt.input_dir,
-        .out = std.fs.cwd(),
-        .subpath_out = conf.out_dir,
+    md.processDir(allocator, &diag, conf, opt.recursive, .{
+        .in = opt.input_dir,
+        .out = conf.out_dir,
     }) catch |e| {
-        std.log.err("{f}: {t}", .{ diag, e });
-        std.process.exit(1);
-    };
-
-    // Output stylesheet etc.
-    diag.verb = .open;
-    diag.object = conf.out_dir;
-    var dir_out = std.fs.cwd().openDir(conf.out_dir, .{}) catch |e| {
-        std.log.err("{f}: {t}", .{ diag, e });
-        std.process.exit(1);
-    };
-    defer dir_out.close();
-    diag.object = opt.input_dir;
-    var dir_in = std.fs.cwd().openDir(opt.input_dir, .{}) catch |e| {
-        std.log.err("{f}: {t}", .{ diag, e });
-        std.process.exit(1);
-    };
-    defer dir_in.close();
-
-    const css_source: file.Source = if (conf.symlink)
-        .{ .symlink = .{ .path_in = opt.input_dir } }
-    else
-        .{ .copy = .{ .dir_in = dir_in } };
-    if (conf.stylesheet) |stylesheet| {
-        diag.verb = .create;
-        diag.object = stylesheet;
-        file.linkOut(
-            allocator,
-            css_source,
-            dir_out,
-            stylesheet,
-        ) catch |e| {
-            std.log.err("{f}: {t}", .{ diag, e });
-            std.process.exit(1);
-        };
-    }
-
-    // Output index
-    var buf: [1024]u8 = undefined;
-    Diagnostic.set(&diag, .{ .verb = .create, .object = "index.html" });
-    const index_out = dir_out.createFile(diag.object, .{ .truncate = true }) catch |e| {
-        std.log.err("{f}: {t}", .{ diag, e });
-        std.process.exit(1);
-    };
-    defer index_out.close();
-    var index_writer = index_out.writer(&buf);
-    const writer = &index_writer.interface;
-
-    // Write index
-    Diagnostic.set(&diag, .{ .verb = .write, .object = "index.html" });
-    const title = conf.site_name orelse "Index";
-    html.writeDocument(html.Index, writer, .{
-        .head = .{
-            .title = title,
-            .title_suffix = null,
-            .charset = conf.charset,
-            .stylesheet = conf.stylesheet,
-        },
-        .body = .{
-            .title = title,
-            .items = index.items,
-        },
-    }, html.writeIndex) catch |e| {
         std.log.err("{f}: {t}", .{ diag, e });
         std.process.exit(1);
     };
 }
 
+// Silence debug messages in release builds.
 pub const std_options: std.Options = .{
     .log_level = if (builtin.mode == .Debug) .debug else .info,
 };
 
-// Enable the compiler to find tests in all imports
+// Enable the compiler to find tests in all imports.
 test {
     std.testing.refAllDeclsRecursive(@This());
 }
