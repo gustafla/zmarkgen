@@ -96,6 +96,57 @@ fn extractTitle(
     return allocator.dupe(u8, default_title);
 }
 
+/// Transforms root-relative link hrefs in the document to relative hrefs
+/// and transforms .md -suffices to .html suffices.
+fn fixHrefs(
+    allocator: Allocator,
+    root_rel: []const u8,
+    document: *c.cmark_node,
+) Allocator.Error!void {
+    const iter = c.cmark_iter_new(document);
+    defer c.cmark_iter_free(iter);
+
+    while (c.cmark_iter_next(iter) != c.CMARK_EVENT_DONE) {
+        const node = c.cmark_iter_get_node(iter);
+        if (c.cmark_node_get_type(node) == c.CMARK_NODE_LINK) {
+            const url = c.cmark_node_get_url(node) orelse continue;
+            const raw_href: []const u8 = std.mem.span(url);
+            if (raw_href.len == 0) continue;
+            var href = raw_href;
+
+            // Transform .md suffix into .html
+            if (std.mem.endsWith(u8, href, ".md")) {
+                const htmlized = try getHtmlPath(allocator, href);
+                errdefer allocator.free(htmlized);
+                href = htmlized;
+            }
+
+            // Transform root-relative href
+            if (std.mem.startsWith(u8, href, "/")) {
+                const relativized = try std.mem.concat(allocator, u8, &.{
+                    root_rel, href[1..],
+                });
+                errdefer allocator.free(relativized);
+                if (href.ptr != raw_href.ptr) allocator.free(href);
+                href = relativized;
+            }
+
+            // If not transformed, omit rest of the processing
+            if (href.ptr == raw_href.ptr) continue;
+
+            // Create C string
+            const href_c = try allocator.dupeZ(u8, href);
+            defer allocator.free(href_c);
+            allocator.free(href);
+
+            // Set transformed href, clean up if allocations were made
+            if (c.cmark_node_set_url(node, href_c) == 0) {
+                @panic("cmark_node_set_url failed");
+            }
+        }
+    }
+}
+
 /// Processes an index list: renders and writes it as HTML.
 fn processIndex(
     conf: Config,
@@ -167,6 +218,10 @@ fn processMdFile(
         c.CMARK_OPT_DEFAULT,
     ) orelse return error.CmarkParseFailed;
     defer c.cmark_node_free(document);
+
+    // Transform root-relative link hrefs into relative.
+    Diagnostic.set(diag, .{ .verb = .allocate, .object = "link href" });
+    try fixHrefs(allocator, root_rel, document);
 
     // Render the document to an HTML string.
     Diagnostic.set(diag, .{ .verb = .render, .object = paths.in });
