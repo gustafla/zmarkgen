@@ -52,7 +52,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
       - name: Generate docs site
         run: |
-          zig build run -- -r doc
+          zig build run -- doc
       - name: Upload static files as artifact
         id: deployment
         uses: actions/upload-pages-artifact@v4

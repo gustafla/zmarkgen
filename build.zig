@@ -49,8 +49,8 @@ pub fn build(b: *std.Build) void {
 
     // Gather some fields from build.zig.zon
     const options = b.addOptions();
-    options.addOption([]const u8, "version", zon.version);
-    options.addOption([]const u8, "name", @tagName(zon.name));
+    options.addOption([]const u8, "bin_version", zon.version);
+    options.addOption([]const u8, "bin_name", @tagName(zon.name));
 
     // Markdown renderer library: cmark
     const cmark = b.dependency("cmark", .{});
@@ -123,7 +123,9 @@ pub fn build(b: *std.Build) void {
     exe_mod.addOptions("options", options);
 
     const exe = b.addExecutable(.{
-        .name = "zmarkgen",
+        .name = @tagName(zon.name),
+        .version = std.SemanticVersion.parse(zon.version) catch
+            @panic("Invalid semver in build.zig.zon"),
         .root_module = exe_mod,
     });
     b.installArtifact(exe);

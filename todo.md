@@ -1,6 +1,5 @@
 # Backlog
 
-- [ ] Improve CLI argument parsing and help text
 - [ ] Implement index short text previews
 - [ ] Add script or hook to autogenerate on self-hosted git systems
 - [ ] Make checkboxes render correctly (probably switch to cmark-gfm)

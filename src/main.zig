@@ -11,8 +11,7 @@ const html = @import("html.zig");
 const md = @import("md.zig");
 
 const CliOptions = struct {
-    recursive: bool = false,
-    config_path: []const u8 = "zmarkgen.zon",
+    config_path: ?[]const u8 = null,
     input_dir: []const u8 = ".",
 
     pub fn parse() CliOptions {
@@ -21,17 +20,22 @@ const CliOptions = struct {
         var args = std.process.args();
         _ = args.skip();
         while (args.next()) |arg| {
-            if (std.mem.eql(u8, arg, "-h")) {
+            if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
                 std.log.info(
                     \\Example: {s} -c my_blog.zon
-                , .{options.name});
+                , .{options.bin_name});
                 std.process.exit(0);
-            } else if (std.mem.eql(u8, arg, "-v")) {
-                std.log.info("{s} v{s}", .{ options.name, options.version });
+            } else if (std.mem.eql(u8, arg, "-v") or
+                std.mem.eql(u8, arg, "--version"))
+            {
+                std.log.info("{s} v{s}", .{
+                    options.bin_name,
+                    options.bin_version,
+                });
                 std.process.exit(0);
-            } else if (std.mem.eql(u8, arg, "-r")) {
-                result.recursive = true;
-            } else if (std.mem.eql(u8, arg, "-c")) {
+            } else if (std.mem.eql(u8, arg, "-c") or
+                std.mem.eql(u8, arg, "--config"))
+            {
                 if (args.next()) |path| {
                     result.config_path = path;
                 } else {
@@ -45,7 +49,10 @@ const CliOptions = struct {
         }
 
         if (args.skip()) {
-            std.log.err("Too many arguments, see usage with -h", .{});
+            std.log.err(
+                "Too many arguments, see usage with {s} -h",
+                .{options.bin_name},
+            );
             std.process.exit(1);
         }
 
@@ -61,19 +68,21 @@ pub fn main() void {
     const opt = CliOptions.parse();
 
     // Load config file
-    std.log.info("Loading {s}", .{opt.config_path});
+    const config_path = opt.config_path orelse options.bin_name ++ ".zon";
+    std.log.info("Loading {s}", .{config_path});
     var zon_diagnostics: std.zon.parse.Diagnostics = .{};
     const conf: Config = Config.load(
         allocator,
-        opt.config_path,
+        config_path,
         &zon_diagnostics,
     ) catch |e| switch (e) {
         Config.Error.FileNotFound => def: {
-            std.log.info(
-                "File {s} not found, using defaults",
-                .{opt.config_path},
-            );
-            break :def .{};
+            std.log.err("File {s} not found", .{config_path});
+            if (opt.config_path == null) {
+                std.log.info("Using defaults", .{});
+                break :def .{};
+            }
+            std.process.exit(1);
         },
         Config.Error.ParseZon => {
             std.log.err("{f}", .{zon_diagnostics});
@@ -97,7 +106,7 @@ pub fn main() void {
 
     // Run the site generator.
     var diag: Diagnostic = undefined;
-    md.processDir(allocator, &diag, conf, opt.recursive, .{
+    md.processDir(allocator, &diag, conf, .{
         .in = opt.input_dir,
         .out = conf.out_dir,
     }) catch |e| {

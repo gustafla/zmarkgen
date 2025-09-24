@@ -291,7 +291,6 @@ fn processDirRecursive(
     diag: ?*Diagnostic,
     conf: Config,
     index: *Index,
-    allow_recursion: bool,
     paths: Paths,
 ) Error!void {
     // Open input directory.
@@ -335,16 +334,13 @@ fn processDirRecursive(
                 // Not a proper solution.
                 if (std.mem.eql(u8, entry.name, conf.out_dir)) continue;
 
-                if (allow_recursion) {
-                    try processDirRecursive(
-                        allocator,
-                        diag,
-                        conf,
-                        index,
-                        allow_recursion,
-                        subpaths,
-                    );
-                }
+                try processDirRecursive(
+                    allocator,
+                    diag,
+                    conf,
+                    index,
+                    subpaths,
+                );
             },
             .sym_link, .file => {
                 std.log.debug("{s}", .{subpaths.in});
@@ -381,7 +377,6 @@ pub fn processDir(
     allocator: Allocator,
     diag: ?*Diagnostic,
     conf: Config,
-    recursive: bool,
     paths: Paths,
 ) Error!void {
     // Initialize index list.
@@ -390,7 +385,7 @@ pub fn processDir(
     defer index.deinit(allocator);
 
     // Process the directory tree.
-    try processDirRecursive(allocator, diag, conf, &index, recursive, paths);
+    try processDirRecursive(allocator, diag, conf, &index, paths);
 
     // Output index.
     Diagnostic.set(diag, .{ .verb = .open, .object = paths.out });
