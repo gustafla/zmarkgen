@@ -74,9 +74,8 @@ fn getHtmlPath(
 
 /// Extracts the title from the first heading node in the document.
 /// Falls back to the provided default_title if no H1 is found.
-/// The returned slice is allocated and must be freed by the caller.
+/// The returned slice is borrowed from document, and must not outlive it.
 fn extractTitle(
-    allocator: Allocator,
     document: *c.cmark_node,
     default_title: []const u8,
 ) Allocator.Error![]const u8 {
@@ -90,78 +89,62 @@ fn extractTitle(
         // We found the first heading, extract its text content.
         node = c.cmark_node_first_child(node) orelse continue;
         const ptr = c.cmark_node_get_literal(node) orelse continue;
-        return allocator.dupe(u8, std.mem.span(ptr));
+        return std.mem.span(ptr);
     }
 
     // No heading found, use the default title.
-    return allocator.dupe(u8, default_title);
+    return default_title;
 }
 
-/// Transforms lists with tickboxes (`e.g. [ ] and [X]`) in the document.
-fn fixChecklists(
-    document: *c.cmark_node,
-) Allocator.Error!void {
-    const iter = c.cmark_iter_new(document);
-    defer c.cmark_iter_free(iter);
+/// Transforms list items with tickboxes (e.g. [ ] and [X]) into HTML elements,
+/// marks the parent list nodes as checklists for wrapping (wrapChecklists).
+fn fixChecklist(node: *c.cmark_node) Allocator.Error!void {
+    // Extract inner paragraph and text node.
+    const node_p = c.cmark_node_first_child(node) orelse return;
+    const node_t = c.cmark_node_first_child(node_p) orelse return;
 
-    while (c.cmark_iter_next(iter) != c.CMARK_EVENT_DONE) {
-        const node_i = c.cmark_iter_get_node(iter);
-        if (c.cmark_node_get_type(node_i) != c.CMARK_NODE_ITEM) continue;
+    // Get string from node.
+    const text_ptr = c.cmark_node_get_literal(node_t) orelse return;
+    const text: [:0]const u8 = std.mem.span(text_ptr);
 
-        // Extract inner paragraph and text node.
-        const node_p = c.cmark_node_first_child(node_i) orelse continue;
-        const node_t = c.cmark_node_first_child(node_p) orelse continue;
+    // Check for checkbox prefix.
+    var checked: ?bool = null;
+    if (std.mem.startsWith(u8, text, "[ ] ")) {
+        checked = false;
+    } else if (std.mem.startsWith(u8, text, "[X] ") or
+        std.mem.startsWith(u8, text, "[x] "))
+    {
+        checked = true;
+    }
+    if (checked == null) return;
 
-        // Get string from node.
-        const text_ptr = c.cmark_node_get_literal(node_t) orelse continue;
-        const text: [:0]const u8 = std.mem.span(text_ptr);
+    // Create a new cmark node with a raw HTML checkbox.
+    const checkbox_html = if (checked.?)
+        \\<input type="checkbox" checked disabled/>
+    else
+        \\<input type="checkbox" disabled/>
+    ;
+    const html_node = c.cmark_node_new(c.CMARK_NODE_HTML_INLINE);
+    _ = c.cmark_node_set_literal(html_node, checkbox_html.ptr);
 
-        // Check for checkbox prefix.
-        var checked: ?bool = null;
-        if (std.mem.startsWith(u8, text, "[ ] ")) {
-            checked = false;
-        } else if (std.mem.startsWith(u8, text, "[X] ") or
-            std.mem.startsWith(u8, text, "[x] "))
-        {
-            checked = true;
-        }
-        if (checked == null) continue;
-
-        // Create raw HTML.
-        const checkbox_html = if (checked.?)
-            \\<input type="checkbox" checked disabled/>
-        else
-            \\<input type="checkbox" disabled/>
-        ;
-
-        // Create a new cmark node for the raw HTML.
-        const html_node = c.cmark_node_new(c.CMARK_NODE_HTML_INLINE);
-        _ = c.cmark_node_set_literal(html_node, checkbox_html.ptr);
-
-        // Insert the new checkbox node into the AST right before the text node.
-        if (c.cmark_node_insert_before(node_t, html_node) == 0) {
-            @panic("cmark_node_insert_before failed");
-        }
-
-        // Update the text node to remove the "[ ] " prefix.
-        const new_text = text["[X] ".len..];
-        _ = c.cmark_node_set_literal(node_t, new_text.ptr);
-
-        // Mark the list item's parent node (list node) as a checklist
-        const list = c.cmark_node_parent(node_i) orelse unreachable;
-        if (c.cmark_node_get_type(list) == c.CMARK_NODE_LIST) {
-            _ = c.cmark_node_set_user_data(list, @ptrFromInt(1));
-        }
+    // Insert the new checkbox node into the AST right before the text node.
+    if (c.cmark_node_insert_before(node_t, html_node) == 0) {
+        @panic("cmark_node_insert_before failed");
     }
 
-    // Wrap with a <div class="checklist">
-    try wrapChecklists(document);
+    // Update the text node to remove the "[ ] " prefix.
+    const new_text = text["[X] ".len..];
+    _ = c.cmark_node_set_literal(node_t, new_text.ptr);
+
+    // Mark the list item's parent node (list node) as a checklist
+    const list = c.cmark_node_parent(node) orelse unreachable;
+    if (c.cmark_node_get_type(list) == c.CMARK_NODE_LIST) {
+        _ = c.cmark_node_set_user_data(list, @ptrFromInt(1));
+    }
 }
 
 /// Finds lists that have been marked and wraps them in <div class="checklist">.
-fn wrapChecklists(
-    document: *c.cmark_node,
-) Allocator.Error!void {
+fn wrapChecklists(document: *c.cmark_node) Allocator.Error!void {
     const iter = c.cmark_iter_new(document);
     defer c.cmark_iter_free(iter);
 
@@ -192,9 +175,52 @@ fn wrapChecklists(
     }
 }
 
-/// Transforms root-relative link hrefs in the document to relative hrefs
-/// and transforms .md -suffices to .html suffices.
-fn fixHrefs(
+/// Transforms a root-relative link href to a relative href,
+/// and transforms .md -suffix to a .html suffix.
+fn fixHref(
+    allocator: Allocator,
+    root_rel: []const u8,
+    node: *c.cmark_node,
+) Allocator.Error!void {
+    const url = c.cmark_node_get_url(node) orelse return;
+    const raw_href: []const u8 = std.mem.span(url);
+    if (raw_href.len == 0) return;
+    var href = raw_href;
+
+    // Transform .md suffix into .html
+    if (std.mem.endsWith(u8, href, ".md")) {
+        const htmlized = try getHtmlPath(allocator, href);
+        errdefer allocator.free(htmlized);
+        href = htmlized;
+    }
+
+    // Transform root-relative href
+    if (std.mem.startsWith(u8, href, "/")) {
+        const relativized = try std.mem.concat(allocator, u8, &.{
+            root_rel, href[1..],
+        });
+        errdefer allocator.free(relativized);
+        if (href.ptr != raw_href.ptr) allocator.free(href);
+        href = relativized;
+    }
+
+    // If not transformed, omit rest of the processing
+    if (href.ptr == raw_href.ptr) return;
+
+    // Create C string
+    const href_c = try allocator.dupeZ(u8, href);
+    defer allocator.free(href_c);
+    allocator.free(href);
+
+    // Set transformed href, clean up if allocations were made
+    if (c.cmark_node_set_url(node, href_c) == 0) {
+        @panic("cmark_node_set_url failed");
+    }
+}
+
+/// Makes transformations to the input document structure. Fixes link hrefs,
+/// renders checklists etc.
+fn fixDocument(
     allocator: Allocator,
     root_rel: []const u8,
     document: *c.cmark_node,
@@ -203,44 +229,16 @@ fn fixHrefs(
     defer c.cmark_iter_free(iter);
 
     while (c.cmark_iter_next(iter) != c.CMARK_EVENT_DONE) {
-        const node = c.cmark_iter_get_node(iter);
-        if (c.cmark_node_get_type(node) != c.CMARK_NODE_LINK) continue;
-
-        const url = c.cmark_node_get_url(node) orelse continue;
-        const raw_href: []const u8 = std.mem.span(url);
-        if (raw_href.len == 0) continue;
-        var href = raw_href;
-
-        // Transform .md suffix into .html
-        if (std.mem.endsWith(u8, href, ".md")) {
-            const htmlized = try getHtmlPath(allocator, href);
-            errdefer allocator.free(htmlized);
-            href = htmlized;
-        }
-
-        // Transform root-relative href
-        if (std.mem.startsWith(u8, href, "/")) {
-            const relativized = try std.mem.concat(allocator, u8, &.{
-                root_rel, href[1..],
-            });
-            errdefer allocator.free(relativized);
-            if (href.ptr != raw_href.ptr) allocator.free(href);
-            href = relativized;
-        }
-
-        // If not transformed, omit rest of the processing
-        if (href.ptr == raw_href.ptr) continue;
-
-        // Create C string
-        const href_c = try allocator.dupeZ(u8, href);
-        defer allocator.free(href_c);
-        allocator.free(href);
-
-        // Set transformed href, clean up if allocations were made
-        if (c.cmark_node_set_url(node, href_c) == 0) {
-            @panic("cmark_node_set_url failed");
+        const node = c.cmark_iter_get_node(iter).?;
+        switch (c.cmark_node_get_type(node)) {
+            c.CMARK_NODE_LINK => try fixHref(allocator, root_rel, node),
+            c.CMARK_NODE_ITEM => try fixChecklist(node),
+            else => {}, // Ignore other node types.
         }
     }
+
+    // Wrap with a <div class="checklist">
+    try wrapChecklists(document);
 }
 
 /// Processes an index list: renders and writes it as HTML.
@@ -311,13 +309,9 @@ fn processMdFile(
     ) orelse return error.CmarkParseFailed;
     defer c.cmark_node_free(document);
 
-    // Transform root-relative link hrefs into relative.
-    Diagnostic.set(diag, .{ .verb = .allocate, .object = "link href" });
-    try fixHrefs(allocator, root_rel, document);
-
-    // Make checklists prettier.
-    Diagnostic.set(diag, .{ .verb = .allocate, .object = "list item" });
-    try fixChecklists(document);
+    // Transform document contents.
+    Diagnostic.set(diag, .{ .verb = .allocate, .object = "document node" });
+    try fixDocument(allocator, root_rel, document);
 
     // Render the document to an HTML string.
     Diagnostic.set(diag, .{ .verb = .render, .object = paths.in });
@@ -328,16 +322,11 @@ fn processMdFile(
     defer std.c.free(html_ptr);
     const html_body = std.mem.span(html_ptr);
 
-    // Extract title and generate the output path.
-    // These are allocated and must be freed if not added to the index.
+    // Extract title.
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "page title" });
-    const title = try extractTitle(
-        allocator,
-        document,
-        std.fs.path.basename(paths.in),
-    );
-    defer allocator.free(title);
+    const title = try extractTitle(document, std.fs.path.basename(paths.in));
 
+    // Generate the output file path.
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "filename" });
     const path_out = try getHtmlPath(allocator, paths.out);
     defer allocator.free(path_out);
@@ -352,7 +341,7 @@ fn processMdFile(
     var file_out_writer = file_out.writer(&io_buf);
     const writer = &file_out_writer.interface;
 
-    // Create stylesheet link
+    // Create stylesheet link.
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "relative path" });
     const stylesheet = if (conf.stylesheet) |href|
         try std.mem.concat(allocator, u8, &.{ root_rel, href })
