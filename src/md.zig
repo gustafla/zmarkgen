@@ -75,10 +75,7 @@ fn getHtmlPath(
 /// Extracts the title from the first heading node in the document.
 /// Falls back to the provided default_title if no H1 is found.
 /// The returned slice is borrowed from document, and must not outlive it.
-fn extractTitle(
-    document: *c.cmark_node,
-    default_title: []const u8,
-) Allocator.Error![]const u8 {
+fn extractTitle(document: *c.cmark_node, default_title: []const u8) []const u8 {
     const iter = c.cmark_iter_new(document);
     defer c.cmark_iter_free(iter);
 
@@ -96,9 +93,83 @@ fn extractTitle(
     return default_title;
 }
 
+/// Extracts the text contents of the document in order, up to target length.
+/// The returned slice is allocated, and must be freed by the caller.
+fn extractSnippet(
+    allocator: Allocator,
+    document: *c.cmark_node,
+    target_len: u32,
+) Allocator.Error!?[]const u8 {
+    // Snippet buffer
+    var buffer: std.ArrayList(u8) = .empty;
+    defer buffer.deinit(allocator);
+
+    // Flags: title is set to true after first heading exited.
+    var title = false;
+    var skip = false;
+
+    const iter = c.cmark_iter_new(document);
+    defer c.cmark_iter_free(iter);
+
+    while (true) {
+        const event_type = c.cmark_iter_next(iter);
+        const node = c.cmark_iter_get_node(iter);
+        const node_type = c.cmark_node_get_type(node);
+
+        switch (event_type) {
+            c.CMARK_EVENT_DONE => break,
+            c.CMARK_EVENT_ENTER => enter: {
+                if (node_type == c.CMARK_NODE_HEADING and !title) skip = true;
+                if (skip) break :enter;
+                switch (node_type) {
+                    c.CMARK_NODE_TEXT, c.CMARK_NODE_CODE, c.CMARK_NODE_CODE_BLOCK => {
+                        const ptr = c.cmark_node_get_literal(node) orelse
+                            break :enter;
+                        const text = std.mem.span(ptr);
+                        try buffer.appendSlice(allocator, text);
+                    },
+                    c.CMARK_NODE_SOFTBREAK, c.CMARK_NODE_LINEBREAK => {
+                        try buffer.append(allocator, ' ');
+                    },
+                    else => {},
+                }
+            },
+            c.CMARK_EVENT_EXIT => {
+                if (node_type == c.CMARK_NODE_HEADING and !title) {
+                    skip = false;
+                    title = true;
+                }
+                try buffer.append(allocator, ' ');
+            },
+            else => {},
+        }
+
+        // Stop once enough text has been extracted.
+        if (buffer.items.len >= target_len) {
+            break;
+        }
+    }
+
+    // Empty document shouldn't have a snippet.
+    if (buffer.items.len == 0) {
+        return null;
+    }
+
+    // Truncate the slice to the target length.
+    var slice = buffer.items[0..@min(buffer.items.len, target_len)];
+
+    // Find the last space to avoid cutting off a word.
+    const last_space = std.mem.lastIndexOfScalar(u8, slice, ' ');
+    if (last_space) |i| {
+        slice = slice[0..i];
+    }
+
+    return try allocator.dupe(u8, slice);
+}
+
 /// Transforms list items with tickboxes (e.g. [ ] and [X]) into HTML elements,
 /// marks the parent list nodes as checklists for wrapping (wrapChecklists).
-fn fixChecklist(node: *c.cmark_node) Allocator.Error!void {
+fn fixChecklist(node: *c.cmark_node) void {
     // Extract inner paragraph and text node.
     const node_p = c.cmark_node_first_child(node) orelse return;
     const node_t = c.cmark_node_first_child(node_p) orelse return;
@@ -142,7 +213,7 @@ fn fixChecklist(node: *c.cmark_node) Allocator.Error!void {
 }
 
 /// Finds lists that have been marked and wraps them in <div class="checklist">.
-fn wrapChecklists(document: *c.cmark_node) Allocator.Error!void {
+fn wrapChecklists(document: *c.cmark_node) void {
     const iter = c.cmark_iter_new(document);
     defer c.cmark_iter_free(iter);
 
@@ -230,13 +301,13 @@ fn fixDocument(
         const node = c.cmark_iter_get_node(iter).?;
         switch (c.cmark_node_get_type(node)) {
             c.CMARK_NODE_LINK => try fixHref(allocator, root_rel, node),
-            c.CMARK_NODE_ITEM => try fixChecklist(node),
+            c.CMARK_NODE_ITEM => fixChecklist(node),
             else => {}, // Ignore other node types.
         }
     }
 
     // Wrap with a <div class="checklist">
-    try wrapChecklists(document);
+    wrapChecklists(document);
 }
 
 /// Processes an index list: renders and writes it as HTML.
@@ -307,6 +378,15 @@ fn processMdFile(
     ) orelse return error.CmarkParseFailed;
     defer c.cmark_node_free(document);
 
+    // Extract title and snippet.
+    const title = extractTitle(document, std.fs.path.basename(paths.in));
+    Diagnostic.set(diag, .{ .verb = .allocate, .object = "snippet" });
+    const snippet = if (conf.snippet_max_len > 0)
+        try extractSnippet(allocator, document, conf.snippet_max_len)
+    else
+        null;
+    defer if (snippet) |snip| allocator.free(snip);
+
     // Transform document contents.
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "document node" });
     try fixDocument(allocator, root_rel, document);
@@ -319,10 +399,6 @@ fn processMdFile(
     ) orelse return error.CmarkRenderFailed;
     defer std.c.free(html_ptr);
     const html_body = std.mem.span(html_ptr);
-
-    // Extract title.
-    Diagnostic.set(diag, .{ .verb = .allocate, .object = "page title" });
-    const title = try extractTitle(document, std.fs.path.basename(paths.in));
 
     // Generate the output file path.
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "filename" });
@@ -368,7 +444,7 @@ fn processMdFile(
 
     // Values of `path_out` and `title` are copied to the index.
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "index entry" });
-    try section.addEntry(allocator, href, title, null);
+    try section.addEntry(allocator, href, title, snippet);
 }
 
 /// Recursively processes a directory, converting markdown files to HTML.

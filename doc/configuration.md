@@ -27,6 +27,10 @@ specified by the `-c` flag.
     // Suffix a site name to generated <title> tags, e.g. "Page 1 - Site Name".
     // Default: null
     .site_name = "My Epic Site",
+
+    // The maximum number of characters in index short text previews.
+    // Use 0 to disable preview snippets in the index page.
+    .snippet_max_len = 50,
 }
 ```
 

@@ -18,6 +18,10 @@ h1 {
   color: #111;
 }
 
+.snippet {
+  color: #666;
+}
+
 code {
   padding: 2px 4px;
   vertical-align: text-bottom;

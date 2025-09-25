@@ -9,6 +9,7 @@ charset: []const u8 = "utf-8",
 symlink: bool = true,
 stylesheet: ?[]const u8 = null,
 site_name: ?[]const u8 = null,
+snippet_max_len: u32 = 256,
 
 pub const Error =
     fs.File.StatError ||

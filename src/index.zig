@@ -14,12 +14,12 @@ pub const Section = struct {
         allocator: Allocator,
         path: []const u8,
         title: []const u8,
-        short: ?[]const u8,
+        snippet: ?[]const u8,
     ) Allocator.Error!void {
         try self.entries.append(allocator, .{
             .path = try allocator.dupe(u8, path),
             .title = try allocator.dupe(u8, title),
-            .short = if (short) |s| try allocator.dupe(u8, s) else null,
+            .snippet = if (snippet) |s| try allocator.dupe(u8, s) else null,
         });
     }
 };
@@ -27,7 +27,7 @@ pub const Section = struct {
 pub const Entry = struct {
     path: []const u8,
     title: []const u8,
-    short: ?[]const u8,
+    snippet: ?[]const u8,
 };
 
 pub fn deinit(self: *@This(), allocator: Allocator) void {
@@ -38,8 +38,8 @@ pub fn deinit(self: *@This(), allocator: Allocator) void {
         for (section.entries.items) |*entry| {
             allocator.free(entry.path);
             allocator.free(entry.title);
-            if (entry.short) |short| {
-                allocator.free(short);
+            if (entry.snippet) |snip| {
+                allocator.free(snip);
             }
         }
         section.entries.deinit(allocator);
@@ -86,8 +86,8 @@ pub fn writeHtml(writer: *Writer, index: @This()) Writer.Error!void {
                 "<a href=\"{s}\"><h3>{s}</h3></a>\n",
                 .{ entry.path, entry.title },
             );
-            if (entry.short) |short| {
-                try writer.print("<p>{s}</p>\n", .{short});
+            if (entry.snippet) |snip| {
+                try writer.print("<p class=\"snippet\">{s}...</p>\n", .{snip});
             }
             try writer.writeAll("</div>");
         }
