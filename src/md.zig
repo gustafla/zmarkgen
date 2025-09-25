@@ -99,7 +99,6 @@ fn extractTitle(
 
 /// Transforms lists with tickboxes (`e.g. [ ] and [X]`) in the document.
 fn fixChecklists(
-    allocator: Allocator,
     document: *c.cmark_node,
 ) Allocator.Error!void {
     const iter = c.cmark_iter_new(document);
@@ -115,7 +114,7 @@ fn fixChecklists(
 
         // Get string from node.
         const text_ptr = c.cmark_node_get_literal(node_t) orelse continue;
-        const text: []const u8 = std.mem.span(text_ptr);
+        const text: [:0]const u8 = std.mem.span(text_ptr);
 
         // Check for checkbox prefix.
         var checked: ?bool = null;
@@ -129,17 +128,15 @@ fn fixChecklists(
         if (checked == null) continue;
 
         // Create raw HTML.
-        const html_fragment = if (checked.?)
+        const checkbox_html = if (checked.?)
             \\<input type="checkbox" checked disabled/>
         else
             \\<input type="checkbox" disabled/>
         ;
-        const html_c = try allocator.dupeZ(u8, html_fragment);
-        defer allocator.free(html_c);
 
         // Create a new cmark node for the raw HTML.
         const html_node = c.cmark_node_new(c.CMARK_NODE_HTML_INLINE);
-        _ = c.cmark_node_set_literal(html_node, html_c.ptr);
+        _ = c.cmark_node_set_literal(html_node, checkbox_html.ptr);
 
         // Insert the new checkbox node into the AST right before the text node.
         if (c.cmark_node_insert_before(node_t, html_node) == 0) {
@@ -148,9 +145,7 @@ fn fixChecklists(
 
         // Update the text node to remove the "[ ] " prefix.
         const new_text = text["[X] ".len..];
-        const new_text_c = try allocator.dupeZ(u8, new_text);
-        defer allocator.free(new_text_c);
-        _ = c.cmark_node_set_literal(node_t, new_text_c.ptr);
+        _ = c.cmark_node_set_literal(node_t, new_text.ptr);
 
         // Mark the list item's parent node (list node) as a checklist
         const list = c.cmark_node_parent(node_i) orelse unreachable;
@@ -160,12 +155,11 @@ fn fixChecklists(
     }
 
     // Wrap with a <div class="checklist">
-    try wrapChecklists(allocator, document);
+    try wrapChecklists(document);
 }
 
 /// Finds lists that have been marked and wraps them in <div class="checklist">.
 fn wrapChecklists(
-    allocator: Allocator,
     document: *c.cmark_node,
 ) Allocator.Error!void {
     const iter = c.cmark_iter_new(document);
@@ -180,27 +174,20 @@ fn wrapChecklists(
         if (!node_is_list or user_data == null) continue;
 
         // Create the opening <div> tag as an HTML block.
-        const open_div_text = "<div class=\"checklist\">";
-        const open_div_c = try allocator.dupeZ(u8, open_div_text);
-        defer allocator.free(open_div_c);
-
+        const open_div_html = "<div class=\"checklist\">";
         const open_div_node = c.cmark_node_new(c.CMARK_NODE_HTML_BLOCK);
-        _ = c.cmark_node_set_literal(open_div_node, open_div_c.ptr);
+        _ = c.cmark_node_set_literal(open_div_node, open_div_html.ptr);
 
         // Insert the opening <div> before the list node.
         _ = c.cmark_node_insert_before(node, open_div_node);
 
         // Create and insert the closing </div> tag after the list node.
-        const close_div_text = "</div>";
-        const close_div_c = try allocator.dupeZ(u8, close_div_text);
-        defer allocator.free(close_div_c);
-
+        const close_div_html = "</div>";
         const close_div_node = c.cmark_node_new(c.CMARK_NODE_HTML_BLOCK);
-        _ = c.cmark_node_set_literal(close_div_node, close_div_c.ptr);
+        _ = c.cmark_node_set_literal(close_div_node, close_div_html.ptr);
         _ = c.cmark_node_insert_after(node, close_div_node);
 
-        // Un-mark the node so we don't process it again if this
-        // function were ever called multiple times.
+        // Un-mark the node so we don't process it again.
         _ = c.cmark_node_set_user_data(node, null);
     }
 }
@@ -330,7 +317,7 @@ fn processMdFile(
 
     // Make checklists prettier.
     Diagnostic.set(diag, .{ .verb = .allocate, .object = "list item" });
-    try fixChecklists(allocator, document);
+    try fixChecklists(document);
 
     // Render the document to an HTML string.
     Diagnostic.set(diag, .{ .verb = .render, .object = paths.in });
