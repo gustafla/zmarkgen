@@ -3,6 +3,8 @@
 - [ ] Add script or hook to autogenerate on self-hosted git systems
 - [ ] Refactor index.zig to use Arena allocation
 - [ ] Render index snippets as HTML
+- [ ] Sort index chronologically
+- [ ] Add date to index entries
 
 ## Docs CSS improvements
 
