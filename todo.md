@@ -1,8 +1,8 @@
 # Backlog
 
-- [ ] Implement index short text previews
 - [ ] Add script or hook to autogenerate on self-hosted git systems
 - [ ] Refactor index.zig to use Arena allocation
+- [ ] Render index snippets as HTML
 
 ## Docs CSS improvements
 
@@ -11,6 +11,7 @@
 
 ## Done
 
+- [X] Implement index short text previews
 - [X] Make checkboxes render correctly
 - [X] Implement index sections for recursive mode
 - [X] Handle root-relative `hrefs` so that they become relative (file://-urls)
