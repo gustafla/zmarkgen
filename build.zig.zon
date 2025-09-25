@@ -1,6 +1,6 @@
 .{
     .name = .zmarkgen,
-    .version = "0.7.0",
+    .version = "0.7.1",
     .dependencies = .{
         .cmark = .{
             .url = "https://github.com/commonmark/cmark/archive/refs/tags/0.31.1.tar.gz",

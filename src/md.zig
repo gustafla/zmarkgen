@@ -119,27 +119,25 @@ fn fixChecklist(node: *c.cmark_node) Allocator.Error!void {
     if (checked == null) return;
 
     // Create a new cmark node with a raw HTML checkbox.
-    const checkbox_html = if (checked.?)
+    const html_cb = if (checked.?)
         \\<input type="checkbox" checked disabled/>
     else
         \\<input type="checkbox" disabled/>
     ;
-    const html_node = c.cmark_node_new(c.CMARK_NODE_HTML_INLINE);
-    _ = c.cmark_node_set_literal(html_node, checkbox_html.ptr);
+    const node_h = c.cmark_node_new(c.CMARK_NODE_HTML_INLINE);
+    if (c.cmark_node_set_literal(node_h, html_cb.ptr) == 0) unreachable;
 
     // Insert the new checkbox node into the AST right before the text node.
-    if (c.cmark_node_insert_before(node_t, html_node) == 0) {
-        @panic("cmark_node_insert_before failed");
-    }
+    if (c.cmark_node_insert_before(node_t, node_h) == 0) unreachable;
 
     // Update the text node to remove the "[ ] " prefix.
     const new_text = text["[X] ".len..];
-    _ = c.cmark_node_set_literal(node_t, new_text.ptr);
+    if (c.cmark_node_set_literal(node_t, new_text.ptr) == 0) unreachable;
 
     // Mark the list item's parent node (list node) as a checklist
     const list = c.cmark_node_parent(node) orelse unreachable;
     if (c.cmark_node_get_type(list) == c.CMARK_NODE_LIST) {
-        _ = c.cmark_node_set_user_data(list, @ptrFromInt(1));
+        if (c.cmark_node_set_user_data(list, @ptrFromInt(1)) == 0) unreachable;
     }
 }
 
@@ -157,21 +155,21 @@ fn wrapChecklists(document: *c.cmark_node) Allocator.Error!void {
         if (!node_is_list or user_data == null) continue;
 
         // Create the opening <div> tag as an HTML block.
-        const open_div_html = "<div class=\"checklist\">";
-        const open_div_node = c.cmark_node_new(c.CMARK_NODE_HTML_BLOCK);
-        _ = c.cmark_node_set_literal(open_div_node, open_div_html.ptr);
+        const html_od = "<div class=\"checklist\">";
+        const node_od = c.cmark_node_new(c.CMARK_NODE_HTML_BLOCK);
+        if (c.cmark_node_set_literal(node_od, html_od.ptr) == 0) unreachable;
 
         // Insert the opening <div> before the list node.
-        _ = c.cmark_node_insert_before(node, open_div_node);
+        if (c.cmark_node_insert_before(node, node_od) == 0) unreachable;
 
         // Create and insert the closing </div> tag after the list node.
-        const close_div_html = "</div>";
-        const close_div_node = c.cmark_node_new(c.CMARK_NODE_HTML_BLOCK);
-        _ = c.cmark_node_set_literal(close_div_node, close_div_html.ptr);
-        _ = c.cmark_node_insert_after(node, close_div_node);
+        const html_cd = "</div>";
+        const node_cd = c.cmark_node_new(c.CMARK_NODE_HTML_BLOCK);
+        if (c.cmark_node_set_literal(node_cd, html_cd.ptr) == 0) unreachable;
+        if (c.cmark_node_insert_after(node, node_cd) == 0) unreachable;
 
         // Un-mark the node so we don't process it again.
-        _ = c.cmark_node_set_user_data(node, null);
+        if (c.cmark_node_set_user_data(node, null) == 0) unreachable;
     }
 }
 
