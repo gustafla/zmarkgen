@@ -1,7 +1,15 @@
 name: CI
 
+env:
+  DEPLOY_CONDITION: ${{ github.event_name == 'push' && !contains(join(github.event.commits.*.message), '#skip') }}
+
 on:
   pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
   push:
     branches:
       - main
@@ -10,6 +18,8 @@ jobs:
   build_and_test:
     name: Lint, Build and Test
     runs-on: ubuntu-latest
+    outputs:
+      can_deploy: ${{ steps.deployment.outcome == 'success' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -22,7 +32,7 @@ jobs:
           path: /usr/local/bin/kcov
           key: ${{ runner.os }}-kcov-1.0
       - name: Install kcov
-        if: steps.cache-kcov.outputs.cache-hit != 'true'
+        if: ${{ steps.cache-kcov.outputs.cache-hit != 'true' }}
         run: |
           sudo apt update
           sudo apt install -y build-essential libcurl4-openssl-dev libelf-dev libdw-dev cmake
@@ -43,9 +53,11 @@ jobs:
         run: |
           zig build test
       - name: Generate coverage report
+        if: ${{ env.DEPLOY_CONDITION == 'true' }}
         run: |
           zig build cov
       - name: Upload coverage reports to Codecov
+        if: ${{ env.DEPLOY_CONDITION == 'true' }}
         uses: codecov/codecov-action@v5
         with:
           files: kcov-output/test/cobertura.xml
@@ -54,6 +66,7 @@ jobs:
         run: |
           zig build run -- doc
       - name: Upload static files as artifact
+        if: ${{ env.DEPLOY_CONDITION == 'true' }}
         id: deployment
         uses: actions/upload-pages-artifact@v4
         with:
@@ -62,6 +75,7 @@ jobs:
     name: Deploy Docs Site
     needs:
       - build_and_test
+    if: ${{ needs.build_and_test.outputs.can_deploy == 'true' }}
     permissions:
       pages: write
       id-token: write

@@ -3,7 +3,7 @@
 [![CI](https://github.com/gustafla/zmarkgen/actions/workflows/ci.yml/badge.svg)](https://github.com/gustafla/zmarkgen/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/gustafla/zmarkgen/graph/badge.svg?token=QG5PM8TAM9)](https://codecov.io/gh/gustafla/zmarkgen)
 
-A very simple static site generator, written in Zig with
+A simple static site generator, written in Zig with
 the [commonmark](https://github.com/commonmark/cmark) library.
 
 This tool was written primarily for the purpose of organizing my personal notes.
