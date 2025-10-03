@@ -363,6 +363,7 @@ fn processMdFile(
     // Stat the input file to allocate the right amount of memory.
     Diagnostic.set(diag, .{ .verb = .stat, .object = paths.in });
     const stat_in = try file_in.stat();
+    std.log.debug("{s} mtime = {}", .{ paths.in, stat_in.mtime });
 
     // Read the input markdown file.
     Diagnostic.set(diag, .{ .verb = .read, .object = paths.in });
